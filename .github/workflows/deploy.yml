@@ -1,0 +1,36 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate worker types
+        run: npx wrangler types
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          # Environment variables for admin credentials are set in Cloudflare Dashboard
+          # https://dash.cloudflare.com/ -> Workers & Pages -> aiagent-proxy -> Settings -> Variables
+          # Add: ADMIN_USERNAME and ADMIN_PASSWORD

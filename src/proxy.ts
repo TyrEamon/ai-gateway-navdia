@@ -1,0 +1,256 @@
+import { Context } from 'hono'
+import { getProvider } from './storage'
+import type { Env, ProxyRequestBody } from './types'
+
+/** 解析模型 ID，如 "deepseek/deepseek-chat" → { providerId, modelId } */
+function parseModelId(model: string): { providerId: string; modelId: string } | null {
+  const slashIndex = model.indexOf('/')
+  if (slashIndex === -1) return null
+  return {
+    providerId: model.substring(0, slashIndex),
+    modelId: model.substring(slashIndex + 1),
+  }
+}
+
+/** 从 API Key 列表中随机选一个已启用的 */
+function selectApiKey(apiKeys: Array<{ key: string; enabled: boolean }>): string | null {
+  const enabled = apiKeys.filter(k => k.enabled)
+  if (enabled.length === 0) return null
+  const index = Math.floor(Math.random() * enabled.length)
+  return enabled[index].key
+}
+
+/** 测试模型连接，发送最小请求验证 */
+export async function testModelConnection(
+  baseUrl: string,
+  apiKey: string,
+  modelId: string,
+  apiType?: 'openai' | 'anthropic'
+): Promise<{ success: boolean; message: string; statusCode?: number }> {
+  try {
+    const cleanBase = baseUrl.replace(/\/$/, '')
+    const endpoint = apiType === 'anthropic' ? 'messages' : 'chat/completions'
+    const url = `${cleanBase}/${endpoint}`
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (apiType === 'anthropic') {
+      headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+    } else {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (response.ok) {
+      return { success: true, message: '连接成功', statusCode: response.status }
+    }
+
+    let errorBody = ''
+    try {
+      const errorData = await response.json() as { error?: { message?: string } }
+      errorBody = errorData?.error?.message || JSON.stringify(errorData)
+    } catch {
+      errorBody = await response.text()
+    }
+
+    return {
+      success: false,
+      message: `HTTP ${response.status}: ${errorBody.substring(0, 200)}`,
+      statusCode: response.status,
+    }
+  } catch (err) {
+    const error = err as Error
+    return {
+      success: false,
+      message: `连接失败: ${error.message?.substring(0, 200) || '未知错误'}`,
+    }
+  }
+}
+
+/** 处理 /v1/chat/completions 等 API 转发 */
+export async function handleProxy(c: Context<{ Bindings: Env }>) {
+  try {
+    const body = await c.req.json<ProxyRequestBody>()
+    const model = body.model
+
+    if (!model) {
+      return c.json({ error: { message: '缺少 model 参数', type: 'invalid_request_error' } }, 400)
+    }
+
+    const parsed = parseModelId(model)
+    if (!parsed) {
+      return c.json({
+        error: {
+          message: `模型格式错误 "${model}"，请使用 提供商ID/模型ID 格式`,
+          type: 'invalid_request_error',
+        },
+      }, 400)
+    }
+
+    const { providerId, modelId } = parsed
+    const provider = await getProvider(c.env, providerId)
+
+    if (!provider) {
+      return c.json({
+        error: { message: `提供商 "${providerId}" 不存在`, type: 'invalid_request_error' },
+      }, 404)
+    }
+
+    if (!provider.enabled) {
+      return c.json({
+        error: { message: `提供商 "${provider.name}" 已禁用`, type: 'provider_disabled' },
+      }, 403)
+    }
+
+    const modelConfig = provider.models.find((m) => m.id === modelId)
+    if (!modelConfig) {
+      return c.json({
+        error: { message: `模型 "${modelId}" 未在提供商 "${provider.name}" 中配置`, type: 'invalid_request_error' },
+      }, 404)
+    }
+    if (!modelConfig.enabled) {
+      return c.json({
+        error: { message: `模型 "${modelId}" 已禁用`, type: 'model_disabled' },
+      }, 403)
+    }
+
+    const enabledKeys = provider.apiKeys.filter(k => k.enabled)
+    if (enabledKeys.length === 0) {
+      return c.json({
+        error: { message: `提供商 "${provider.name}" 未配置可用的 API Key`, type: 'configuration_error' },
+      }, 500)
+    }
+
+    const forwardBody = { ...body, model: modelId }
+    const url = new URL(c.req.url)
+    const subPath = url.pathname.replace(/^\/v1\//, '') || 'chat/completions'
+    const cleanBase = provider.baseUrl.replace(/\/$/, '')
+    const forwardUrl = `${cleanBase}/${subPath}${url.search}`
+
+    // 打乱 key 顺序实现随机轮询 + 失败重试
+    const keyIndices = Array.from({ length: enabledKeys.length }, (_, i) => i)
+    for (let i = keyIndices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [keyIndices[i], keyIndices[j]] = [keyIndices[j], keyIndices[i]]
+    }
+
+    let lastError: Response | null = null
+
+    for (const keyIndex of keyIndices) {
+      const apiKey = enabledKeys[keyIndex].key
+      try {
+        const forwardHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (provider.apiType === 'anthropic') {
+          forwardHeaders['x-api-key'] = apiKey
+          forwardHeaders['anthropic-version'] = '2023-06-01'
+        } else {
+          forwardHeaders['Authorization'] = `Bearer ${apiKey}`
+        }
+
+        const response = await fetch(forwardUrl, {
+          method: c.req.method,
+          headers: forwardHeaders,
+          body: JSON.stringify(forwardBody),
+          signal: AbortSignal.timeout(60000),
+        })
+
+        if (response.ok) {
+          const responseHeaders: Record<string, string> = {
+            'Content-Type': response.headers.get('Content-Type') || 'application/json',
+            'Cache-Control': 'no-store',
+          }
+          return new Response(response.body, {
+            status: response.status,
+            headers: responseHeaders,
+          })
+        }
+
+        // 401/403/429/5xx 尝试下一个 key
+        if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
+          lastError = response
+          continue
+        }
+
+        // 其他错误（400/404 等）直接返回
+        const errorData = await response.json().catch(async () => ({ error: { message: await response.text() } }))
+        return c.json(errorData, response.status as Parameters<typeof c.json>[1])
+      } catch (err) {
+        const error = err as Error
+        lastError = new Response(JSON.stringify({
+          error: { message: error.message || '请求失败', type: 'proxy_error' },
+        }), { status: 502 })
+        continue
+      }
+    }
+
+    // 所有 key 均失败
+    if (lastError) {
+      const errorBody = await lastError.text().catch(() => '所有 API Key 均失败')
+      return c.json({
+        error: {
+          message: `所有 API Key 已用完，最后一次错误: HTTP ${lastError.status}`,
+          type: 'key_exhausted',
+          detail: errorBody.substring(0, 500),
+        },
+      }, (lastError.status || 502) as Parameters<typeof c.json>[1])
+    }
+
+    return c.json({
+      error: { message: '没有可用的 API Key', type: 'configuration_error' },
+    }, 500)
+  } catch (err) {
+    const error = err as Error
+    return c.json({
+      error: { message: error.message || '代理转发内部错误', type: 'server_error' },
+    }, 500)
+  }
+}
+
+/** 处理 /v1/models — 返回所有已启用的模型（含提供商前缀） */
+export async function handleModels(c: Context<{ Bindings: Env }>) {
+  const { getProviders } = await import('./storage')
+  const providers = await getProviders(c.env)
+
+  const models: Array<{
+    id: string
+    provider: string
+    provider_name: string
+    object: string
+    created: number
+    owned_by: string
+  }> = []
+
+  for (const provider of providers) {
+    if (!provider.enabled) continue
+    for (const model of provider.models) {
+      if (!model.enabled) continue
+      models.push({
+        id: `${provider.id}/${model.id}`,
+        provider: provider.id,
+        provider_name: provider.name,
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: provider.id,
+      })
+    }
+  }
+
+  return c.json({
+    object: 'list',
+    data: models,
+  })
+}
