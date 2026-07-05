@@ -12,7 +12,7 @@ export interface Provider {
   id: string
   name: string
   baseUrl: string
-  apiType?: 'openai' | 'anthropic'
+  apiType?: 'openai'
   apiKeys: ApiKeyEntry[]
   models: Model[]
   enabled: boolean
@@ -48,7 +48,7 @@ export interface CreateProviderRequest {
   id: string
   name: string
   baseUrl: string
-  apiType?: 'openai' | 'anthropic'
+  apiType?: 'openai'
   apiKeys?: Array<{ key: string; enabled: boolean }>
   models?: Array<{ id: string; enabled: boolean }> | string[]
   enabled?: boolean
@@ -57,7 +57,7 @@ export interface CreateProviderRequest {
 export interface UpdateProviderRequest {
   name?: string
   baseUrl?: string
-  apiType?: 'openai' | 'anthropic'
+  apiType?: 'openai'
   apiKeys?: Array<{ key: string; enabled: boolean }>
   models?: Array<{ id: string; enabled: boolean }> | string[]
   enabled?: boolean
@@ -78,4 +78,8 @@ export interface Env {
   KV: KVNamespace
   ADMIN_USERNAME?: string
   ADMIN_PASSWORD?: string
+  NVIDIA_RACE_MAX_KEYS?: string
+  NVIDIA_RACE_PER_KEY_RETRIES?: string
+  NVIDIA_RACE_ATTEMPT_TIMEOUT_MS?: string
+  NVIDIA_RACE_OVERALL_TIMEOUT_MS?: string
 }

@@ -42,7 +42,7 @@ ${H('首页')}
       <p class="mu fs-77" style="margin-bottom:2px;">
         本站 API 接口：<code class="cd">https://${host}/v1</code> <i class="fas fa-copy cp copy-icon va-m" onclick='copyText("https://${host}/v1",this)'></i>
       </p>
-      <p class="mu fs-77">模型名称格式：<code class="cd">提供商ID/模型ID</code></p>
+      <p class="mu fs-77">模型名称格式：<code class="cd">NVIDIA 原始模型 ID</code></p>
     </div>
     <div class="card" style="flex:1; padding:14px; display:flex; flex-direction:column; justify-content:center;">
       <div class="fc jc-sb" style="margin-bottom:6px;">
@@ -77,7 +77,7 @@ ${H('首页')}
         <div class="fc jc-sb" style="display: flex; justify-content: space-between;">
           <h3 style="font-size:.9rem;font-weight:600;">
             <i class="fas fa-server c-p" style="margin-right:5px;"></i>${p.name} 
-            <span class="c-muted fw-4 fs-65" style="padding:1px 5px;border-radius:4px;border:1px solid var(--c-border-dark);vertical-align:middle;">${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span>
+            <span class="c-muted fw-4 fs-65" style="padding:1px 5px;border-radius:4px;border:1px solid var(--c-border-dark);vertical-align:middle;">NVIDIA</span>
           </h3>
           <span class="bd ${p.enabled?'bd-on':'bd-off'}">${p.enabled?'已启用':'未启用'}</span>
         </div>
@@ -87,7 +87,7 @@ ${H('首页')}
           <i class="fas fa-copy cp fx-s0 copy-icon" onclick='copyText("${p.baseUrl}",this)'></i>
         </p>
         ${p.models.filter(m=>m.enabled).length
-          ? `<div class="mw">${p.models.filter(m=>m.enabled).map(m=>`<span class="tag" onclick='copyText("${p.id}/${m.id}",this)'><i class="fas fa-cube"></i>${p.id}/${m.id}</span>`).join('')}</div>`
+          ? `<div class="mw">${p.models.filter(m=>m.enabled).map(m=>`<span class="tag" onclick='copyText("${m.id}",this)'><i class="fas fa-cube"></i>${m.id}</span>`).join('')}</div>`
           : `<p class="mu fs-i" style="margin-top:5px;">暂无启用的模型</p>`
         }
       </div>
@@ -268,7 +268,7 @@ export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
 ${H('管理')}
 <body>
 <hd><div class="ct">
-  <h1><i class="fas fa-cloud"></i>${SITE_CONFIG.title}<span class="c-l" style="font-size:14px;font-weight:normal;margin-left:5px;">| 统一的 AI 管理平台</span></h1>
+  <h1><i class="fas fa-cloud"></i>${SITE_CONFIG.title}<span class="c-l" style="font-size:14px;font-weight:normal;margin-left:5px;">| NVIDIA 多 Key 竞速代理</span></h1>
   <div class="nav"><a href="/" class="btn btn-gh"><i class="fas fa-home"></i>首页</a><a href="/admin/logout" class="btn btn-gh"><i class="fas fa-sign-out-alt"></i>退出</a></div>
 </div></hd>
 
@@ -287,15 +287,14 @@ ${H('管理')}
   <div id="af" class="hd add-form-panel">
     <h3 class="fs-88 mb-10"><i class="fas fa-plus-circle c-p"></i> 添加新提供商</h3>
     <div class="fr">
-      <div class="fg"><label>名称</label><input type="text" id="anm" placeholder="DeepSeek"></div>
-      <div class="fg"><label>ID</label><input type="text" id="aid" placeholder="deepseek"></div>
+      <div class="fg"><label>名称</label><input type="text" id="anm" placeholder="NVIDIA"></div>
+      <div class="fg"><label>ID</label><input type="text" id="aid" placeholder="nvidia"></div>
     </div>
-    <div class="fg"><label>API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com"></div>
+    <div class="fg"><label>API 地址</label><input type="url" id="aurl" placeholder="https://integrate.api.nvidia.com/v1"></div>
     <div class="fg">
       <label>API 格式</label>
       <select id="afmt" class="select-sm">
-        <option value="openai">OpenAI 兼容</option>
-        <option value="anthropic">Anthropic 兼容</option>
+        <option value="openai">NVIDIA OpenAI 兼容</option>
       </select>
     </div>
     <div class="fg"><label>API Keys</label>
@@ -310,7 +309,7 @@ ${H('管理')}
     </div>
     <div class="fg"><label>模型 ID <span class="mu">（支持多个）</span></label>
       <div id="amodels">
-        <div class="fc mb-4"><input type="text" placeholder="deepseek-chat" class="fx1 ami">
+        <div class="fc mb-4"><input type="text" placeholder="meta/llama-3.1-70b-instruct" class="fx1 ami">
           <label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label>
           <button class="btn btn-gh btn-xs" onclick="testNewMdl(this)" title="测试"><i class="fas fa-plug"></i></button>
           <button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>
@@ -365,8 +364,7 @@ ${H('管理')}
         <div class="fg"><label>API 地址</label><input type="url" id="url-${p.id}" value="${p.baseUrl}"></div>
         <div class="fg"><label>API 格式</label>
           <select id="at-${p.id}" class="select-sm">
-            <option value="openai" ${(p.apiType||'openai')==='openai'?'selected':''}>OpenAI 兼容</option>
-            <option value="anthropic" ${p.apiType==='anthropic'?'selected':''}>Anthropic 兼容</option>
+            <option value="openai" selected>NVIDIA OpenAI 兼容</option>
           </select>
         </div>
         <div class="fg"><label>API Keys</label>
@@ -566,7 +564,7 @@ function addMdlRow() {
   const c = document.getElementById('amodels')
   const d = document.createElement('div')
   d.className = 'fc mb-4'
-  d.innerHTML = '<input type="text" placeholder="deepseek-chat" class="fx1 ami"><label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testNewMdl(this)"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>'
+  d.innerHTML = '<input type="text" placeholder="meta/llama-3.1-70b-instruct" class="fx1 ami"><label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testNewMdl(this)"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>'
   c.appendChild(d)
 }
 

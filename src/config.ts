@@ -1,12 +1,12 @@
 import type { Provider } from './types'
 
 export const SITE_CONFIG = {
-  title: 'AI Gateway',
-  subtitle: '统一的 AI 管理平台',
+  title: 'NVIDIA Gateway',
+  subtitle: 'NVIDIA 多 Key 竞速代理',
   author: 'QingYun',
   authorUrl: 'https://github.com/yutian81/ai-gateway',
   blogUrl: 'https://blog.notett.com',
-  description: 'AI 提供商 API 代理网关 — 统一 /v1 接口转发',
+  description: 'NVIDIA API 代理网关 — OpenAI 兼容 /v1 接口转发',
   favicon: 'https://pan.811520.xyz/icon/ai.webp',
   faCdn: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css',
 }
@@ -33,60 +33,16 @@ export const EXPIRY_OPTIONS: Record<string, number | null> = {
 
 export const DEFAULT_PROVIDERS: Provider[] = [
   {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com',
+    id: 'nvidia',
+    name: 'NVIDIA',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
     apiType: 'openai',
     apiKeys: [],
     models: [
-      { id: 'deepseek-v4-flash', enabled: true },
-      { id: 'deepseek-v4-pro', enabled: true },
-    ],
-    enabled: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    apiType: 'openai',
-    apiKeys: [],
-    models: [
-      { id: 'gpt-4o', enabled: true },
-      { id: 'gpt-4o-mini', enabled: true },
-      { id: 'gpt-5.5', enabled: true },
-      { id: 'gpt-5', enabled: true },
-    ],
-    enabled: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-    apiType: 'anthropic',
-    apiKeys: [],
-    models: [
-      { id: 'claude-opus-4-8', enabled: true },
-      { id: 'claude-sonnet-5', enabled: true },
-      { id: 'claude-fable-5', enabled: true },
-    ],
-    enabled: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'gemini',
-    name: 'Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1',
-    apiType: 'openai',
-    apiKeys: [],
-    models: [
-      { id: 'gemini-3.5-flash', enabled: true },
-      { id: 'gemini-3.1-pro', enabled: true },
-      { id: 'gemini-3.1-flash-lite', enabled: true },
+      { id: 'meta/llama-3.1-405b-instruct', enabled: true },
+      { id: 'meta/llama-3.1-70b-instruct', enabled: true },
+      { id: 'meta/llama-3.1-8b-instruct', enabled: true },
+      { id: 'nvidia/llama-3.1-nemotron-70b-instruct', enabled: true },
     ],
     enabled: true,
     createdAt: new Date().toISOString(),

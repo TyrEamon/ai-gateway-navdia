@@ -1,28 +1,32 @@
-# AI Gateway
+# NVIDIA Gateway
 
-基于 Cloudflare Workers + Hono 的 AI 提供商 API 代理网关，统一 `/v1` 接口转发，支持多 Key 轮询、健康检查与自动故障转移。
+基于 Cloudflare Workers + Hono 的 NVIDIA OpenAI-compatible API 代理网关。这个版本已经改成 NVIDIA 专用：客户端继续请求 `/v1/*`，请求体里的 `model` 使用 NVIDIA 原始模型 ID，例如 `meta/llama-3.1-70b-instruct`，不再添加 `nvidia/` 或其他提供商前缀。
 
-## 功能与特性
+## 特性
 
-- **统一 API 接口** — 所有 AI 提供商通过 `https://你的域名/v1/` 访问，兼容 OpenAI / Anthropic 协议
-- **多 Key 轮询 + 健康检查** — 每个提供商可配置多个 API Key，请求随机打乱；失败 Key 自动降权，连续失败 3 次后排除轮询
-- **多提供商管理** — 内置 DeepSeek / OpenAI / Anthropic / Gemini，支持自定义添加
-- **两级启用控制** — 提供商级别 + 模型级别的启用/禁用
-- **转发 Key 认证** — 生成 `sk_cf_*` 格式的 API Key，支持有效期管理
-- **模型连接测试** — 管理后台手动测试模型是否可连接
-- **管理后台** — 现代化卡片式 UI，移动端自适应
+- **NVIDIA 专用转发**：默认上游为 `https://integrate.api.nvidia.com/v1`。
+- **多 Key 并发竞速**：每个客户端请求会从 NVIDIA Key 池随机选择若干 Key 并发请求，最快的有效 `2xx` 响应直接返回。
+- **单 Key 有限重试**：每个 Key 内部会快速过滤 `429`、超时、网络错误、常见 `5xx` 和部分临时性 `400`，在有限次数内继续尝试。
+- **失败不拉黑**：不再把 NVIDIA 公益 Key 的随机失败写入 KV 健康状态，也不做长时间冷却。
+- **流式响应透传**：成功的上游响应 body 直接流式返回，其他未胜出的请求会被取消。
+- **转发 Key 认证**：客户端使用管理后台生成的 `sk_cf_*` 作为本代理的访问 Key。
 
-## 技术栈
+## 竞速参数
 
-- **运行时**：Cloudflare Workers
-- **框架**：[Hono](https://hono.dev/) v4
-- **存储**：Cloudflare Workers KV
-- **语言**：TypeScript
+这些变量可以在 Cloudflare Worker 环境变量中配置：
+
+| 变量 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `NVIDIA_RACE_MAX_KEYS` | `6` | 每个请求最多并发竞速的 NVIDIA Key 数。默认贴合 Workers 同时出站连接限制。 |
+| `NVIDIA_RACE_PER_KEY_RETRIES` | `2` | 每个 Key 内部最多尝试次数。 |
+| `NVIDIA_RACE_ATTEMPT_TIMEOUT_MS` | `6000` | 单次上游请求超时时间。 |
+| `NVIDIA_RACE_OVERALL_TIMEOUT_MS` | `30000` | 整个竞速请求的总超时时间。 |
+
+Cloudflare Workers Free 每天有请求数限制，并且单次 Worker 调用也有子请求/连接限制；默认 `6 * 2 = 12` 次上游尝试，比较适合免费计划。
 
 ## 本地开发
 
 ```bash
-# 克隆项目
 git clone <你的仓库地址>
 cd ai-gateway
 npm install
@@ -31,68 +35,51 @@ npm install
 echo ADMIN_USERNAME=admin >> .dev.vars
 echo ADMIN_PASSWORD=your-password >> .dev.vars
 
-# 启动本地开发服务器
 npm run dev
 ```
 
 ## 部署
 
-### 方式一：手动部署
+1. 在 Cloudflare Dashboard 创建 Worker，连接你的 GitHub 仓库。
+2. 绑定 KV 命名空间，binding 名称保持 `KV`。
+3. 在 Worker 变量中配置：
+   - `ADMIN_USERNAME`
+   - `ADMIN_PASSWORD`
+   - 可选：上面的 `NVIDIA_RACE_*` 参数。
+4. 部署后进入管理后台，给 `nvidia` 提供商添加 NVIDIA API Key。
+5. 在管理后台生成本代理的转发 Key，客户端使用 `Authorization: Bearer sk_cf_*` 访问。
 
-1. 在 Cloudflare Dashboard → **Workers & Pages** → 点击 **创建** → **Workers** → **连接到 Git**
-2. 选择你的 GitHub 仓库，在构建设置中使用默认选项，点击**保存并部署**
-3. Cloudflare Pages 会自动构建并部署 Worker，同时自动创建 `KV` 命名空间并绑定
-4. 部署完成后，进入 Worker 页面 → **Settings** → **Variables**，添加：
-   - `ADMIN_USERNAME` — 管理后台登录用户名
-   - `ADMIN_PASSWORD` — 管理后台登录密码
-- 建议：绑定一个自定义域名
+## 调用示例
 
-### 方式二：GitHub Actions 自动部署
-
-1. Fork 或推送代码到你的 GitHub 仓库
-
-2. 在 GitHub 仓库 Settings → **Secrets and variables** → **Actions** 中配置：
-   - **Secrets**：`CF_API_TOKEN`（Cloudflare API Token，权限需包含 Workers 编辑）
-   - **Variables**：`ADMIN_USERNAME`、`ADMIN_PASSWORD`
-
-3. 在 GitHub 仓库 Actions 页面手动触发 **Deploy to Cloudflare Workers** 工作流，或推送到 `main` 分支自动触发
-
-> 工作流会在 CI 中自动生成 `wrangler.toml`（含 KV 绑定和 ADMIN 凭据），无需手动配置 Dashboard。
-
-## 使用方法
-
-- **API BASE URL**：`https://你的域名/v1/`
-- **API KEY**：在管理后台手动生成，格式为：`sk_cf_<KEY>`
-- **模型ID**：提供商ID/模型ID，提供商ID在设置中自定义，如：
-  - `deepseek/deepseek-v4/flash`
-  - `openai/gpt-5.5`
-  - `anthropic/claude-opus-4-8`
+```bash
+curl https://你的域名/v1/chat/completions \
+  -H "Authorization: Bearer sk_cf_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "meta/llama-3.1-70b-instruct",
+    "messages": [{ "role": "user", "content": "hi" }],
+    "max_tokens": 64
+  }'
+```
 
 ## 项目结构
 
-```
+```text
 ai-gateway/
 ├── src/
 │   ├── index.ts     # 入口，路由注册
 │   ├── types.ts     # 类型定义
-│   ├── config.ts    # 默认配置
+│   ├── config.ts    # NVIDIA 默认配置
 │   ├── storage.ts   # KV 存储层
-│   ├── auth.ts      # 认证系统
-│   ├── proxy.ts     # API 转发核心（Key 轮询 + 健康检查）
+│   ├── auth.ts      # 管理后台与转发 Key 认证
+│   ├── proxy.ts     # NVIDIA 多 Key 竞速代理核心
 │   ├── admin.ts     # 管理 API
 │   └── pages.ts     # 前端页面模板
 ├── wrangler.toml
 ├── package.json
-├── tsconfig.json
-└── .github/workflows/deploy.yml
+└── tsconfig.json
 ```
 
 ## License
 
 Apache 2.0
-
-## 星星走起
-
-## Star History
-
-[![GitHub Star History Chart](https://api.star-history.com/svg?repos=yutian81/ai-gateway&type=Date)](https://star-history.com/#yutian81/ai-gateway&Date)
