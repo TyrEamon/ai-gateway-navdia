@@ -59,6 +59,15 @@ npm run dev
 
 > 工作流会在 CI 中自动生成 `wrangler.toml`（含 KV 绑定和 ADMIN 凭据），无需手动配置 Dashboard。
 
+## 使用方法
+
+- **API BASE URL**：`https://你的域名/v1/`
+- **API KEY**：在管理后台手动生成，格式为：`sk_cf_<KEY>`
+- **模型ID**：提供商ID/模型ID，提供商ID在设置中自定义，如：
+  - `deepseek/deepseek-v4/flash`
+  - `openai/gpt-5.5`
+  - `anthropic/claude-opus-4-8`
+
 ## 项目结构
 
 ```
@@ -80,4 +89,10 @@ ai-gateway/
 
 ## License
 
-MIT
+Apache 2.0
+
+## 星星走起
+
+## Star History
+
+[![GitHub Star History Chart](https://api.star-history.com/svg?repos=yutian81/ai-gateway&type=Date)](https://star-history.com/#yutian81/ai-gateway&Date)
