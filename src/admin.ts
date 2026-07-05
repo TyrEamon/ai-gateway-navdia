@@ -1,6 +1,7 @@
 import { Context } from 'hono'
 import {
   getProviders,
+  getProvider,
   addProvider,
   updateProvider,
   deleteProvider,
@@ -22,6 +23,21 @@ import type {
 } from './types'
 
 // ===== 系统状态 =====
+
+/**
+ * 将 string[] 或正规对象数组统一转换为正规对象数组
+ * 例: ["k1","k2"] → [{key:"k1",enabled:true},{key:"k2",enabled:true}]
+ */
+function normalizeArray<T>(
+  items: unknown,
+  mapFn: (val: string) => T
+): T[] {
+  if (!Array.isArray(items)) return []
+  if (items.length === 0 || typeof items[0] === 'string') {
+    return (items as string[]).map(mapFn)
+  }
+  return items as T[]
+}
 
 export async function handleStatus(c: Context<{ Bindings: Env }>) {
   const providers = await getProviders(c.env)
@@ -72,16 +88,10 @@ export async function handleCreateProvider(c: Context<{ Bindings: Env }>) {
     name: body.name,
     baseUrl: body.baseUrl.replace(/\/$/, ''),
     apiType: body.apiType || 'openai',
-    apiKeys: Array.isArray(body.apiKeys)
-	      ? (typeof (body.apiKeys as unknown[])[0] === 'string'
-	          ? (body.apiKeys as unknown as string[]).map((k) => ({ key: k, enabled: true }))
-	          : body.apiKeys as Array<{ key: string; enabled: boolean }>)
-	      : [],
-	    models: body.models
-	      ? (typeof (body.models as unknown[])[0] === 'string'
-	          ? (body.models as unknown as string[]).map((m) => ({ id: m, enabled: true }))
-	          : body.models as Array<{ id: string; enabled: boolean }>)
-	      : [],
+apiKeys: normalizeArray(body.apiKeys, (k) => ({ key: k, enabled: true })),
+    models: body.models
+      ? normalizeArray(body.models, (m) => ({ id: m, enabled: true }))
+      : [],
     enabled: body.enabled !== undefined ? body.enabled : true,
     createdAt: now,
     updatedAt: now,
@@ -100,21 +110,13 @@ export async function handleUpdateProvider(c: Context<{ Bindings: Env }>) {
   if (body.name !== undefined) updates.name = body.name
   if (body.baseUrl !== undefined) updates.baseUrl = body.baseUrl.replace(/\/$/, '')
   if (body.apiType !== undefined) updates.apiType = body.apiType
-  if (body.apiKeys !== undefined) {
-	    updates.apiKeys = Array.isArray(body.apiKeys)
-	      ? (typeof (body.apiKeys as unknown[])[0] === 'string'
-	          ? (body.apiKeys as unknown as string[]).map((k) => ({ key: k, enabled: true }))
-	          : body.apiKeys as Array<{ key: string; enabled: boolean }>)
-	      : []
-	  }
-	  if (body.enabled !== undefined) updates.enabled = body.enabled
-	  if (body.models !== undefined) {
-	    updates.models = Array.isArray(body.models)
-	      ? (typeof (body.models as unknown[])[0] === 'string'
-	          ? (body.models as unknown as string[]).map((m) => ({ id: m, enabled: true }))
-	          : body.models as Array<{ id: string; enabled: boolean }>)
-	      : undefined
-	  }
+if (body.apiKeys !== undefined) {
+    updates.apiKeys = normalizeArray(body.apiKeys, (k) => ({ key: k, enabled: true }))
+  }
+  if (body.enabled !== undefined) updates.enabled = body.enabled
+  if (body.models !== undefined) {
+    updates.models = normalizeArray(body.models, (m) => ({ id: m, enabled: true }))
+  }
 
   const updated = await updateProvider(c.env, id, updates)
   if (!updated) {
@@ -143,7 +145,6 @@ export async function handleTestModel(c: Context<{ Bindings: Env }>) {
     return c.json<ApiResponse>({ success: false, message: 'modelId 为必填项' }, 400)
   }
 
-  const { getProvider } = await import('./storage')
   const provider = await getProvider(c.env, id)
   if (!provider) {
     return c.json<ApiResponse>({ success: false, message: '提供商不存在' }, 404)

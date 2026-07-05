@@ -17,7 +17,7 @@ import {
   handleDeleteProxyKey,
 } from './admin'
 import { renderHomePage, renderLoginPage, renderAdminPage } from './pages'
-import { seedInitialData } from './storage'
+import { seedInitialData, getSession } from './storage'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -41,8 +41,7 @@ app.get('/', async (c) => {
   const sessionId = getCookie(c, 'session_id')
   let isLoggedIn = false
   if (sessionId) {
-    const { getSession } = await import('./storage')
-    const session = await getSession(c.env, sessionId)
+const session = await getSession(c.env, sessionId)
     isLoggedIn = session !== null
   }
   return renderHomePage(c, isLoggedIn)

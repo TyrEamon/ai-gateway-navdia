@@ -1,5 +1,5 @@
 import { KV_KEYS } from './config'
-import type { Env, Provider, ProxyKey, Session, ApiKeyEntry } from './types'
+import type { Env, Provider, ProxyKey, Session } from './types'
 
 // ===== 提供商 CRUD =====
 

@@ -29,11 +29,6 @@ export interface ProxyKey {
   expiresAt?: string | null
 }
 
-export interface AdminAuth {
-  username: string
-  passwordHash: string
-}
-
 export interface Session {
   username: string
   expiresAt: number
@@ -47,11 +42,6 @@ export interface ProxyRequestBody {
 
 export interface TestModelRequest {
   modelId: string
-}
-
-export interface LoginRequest {
-  username: string
-  password: string
 }
 
 export interface CreateProviderRequest {
@@ -82,12 +72,6 @@ export interface ApiResponse<T = unknown> {
   success: boolean
   data?: T
   message?: string
-}
-
-export interface TestModelResult {
-  success: boolean
-  message: string
-  statusCode?: number
 }
 
 export interface Env {

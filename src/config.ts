@@ -4,9 +4,11 @@ export const SITE_CONFIG = {
   title: 'AI Gateway',
   subtitle: '统一的 AI 管理平台',
   author: 'QingYun',
-  authorUrl: 'https://github.com/QingYun',
-  blogUrl: 'https://qingyun.blog',
+  authorUrl: 'https://github.com/yutian81/ai-gateway',
+  blogUrl: 'https://blog.notett.com',
   description: 'AI 提供商 API 代理网关 — 统一 /v1 接口转发',
+  favicon: 'https://pan.811520.xyz/icon/ai.webp',
+  faCdn: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css',
 }
 
 export const SESSION_TTL = 7 * 24 * 60 * 60

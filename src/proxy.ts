@@ -1,5 +1,5 @@
 import { Context } from 'hono'
-import { getProvider } from './storage'
+import { getProvider, getProviders } from './storage'
 import type { Env, ProxyRequestBody } from './types'
 
 /** 解析模型 ID，如 "deepseek/deepseek-chat" → { providerId, modelId } */
@@ -10,14 +10,6 @@ function parseModelId(model: string): { providerId: string; modelId: string } | 
     providerId: model.substring(0, slashIndex),
     modelId: model.substring(slashIndex + 1),
   }
-}
-
-/** 从 API Key 列表中随机选一个已启用的 */
-function selectApiKey(apiKeys: Array<{ key: string; enabled: boolean }>): string | null {
-  const enabled = apiKeys.filter(k => k.enabled)
-  if (enabled.length === 0) return null
-  const index = Math.floor(Math.random() * enabled.length)
-  return enabled[index].key
 }
 
 /** 测试模型连接，发送最小请求验证 */
@@ -222,7 +214,6 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
 
 /** 处理 /v1/models — 返回所有已启用的模型（含提供商前缀） */
 export async function handleModels(c: Context<{ Bindings: Env }>) {
-  const { getProviders } = await import('./storage')
   const providers = await getProviders(c.env)
 
   const models: Array<{
