@@ -65,7 +65,7 @@ ${H('首页')}
         
         <span class="c-muted" style="font-size:.82rem; display:inline-flex; align-items:center;">
           <i class="fas fa-check-circle" style="color:var(--c-success);font-size:.75rem;width:14px;text-align:center;margin-right:4px;"></i> 已启用 
-          <span class="n" style="font-size:1.2rem; margin-left:4px;">${providers.reduce((s,p)=>s+p.models.filter(m=>m.enabled).length,0)}</span>
+          <span class="n" style="font-size:1.2rem; margin-left:4px;">${providers.filter(p=>p.enabled).reduce((s,p)=>s+p.models.filter(m=>m.enabled).length,0)}</span>
         </span>
       </div>
     </div>
@@ -74,8 +74,11 @@ ${H('首页')}
   <div class="g2">
     ${providers.filter(p=>p.enabled).map(p=>`
       <div class="card p-14">
-        <div class="fc jc-sb">
-          <h3 style="font-size:.9rem;font-weight:600;"><i class="fas fa-server c-p" style="margin-right:5px;"></i>${p.name} <span class="c-muted fw-4 fs-65" style="padding:1px 5px;border-radius:4px;border:1px solid var(--c-border-dark);vertical-align:middle;">${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span></h3>
+        <div class="fc jc-sb" style="display: flex; justify-content: space-between;">
+          <h3 style="font-size:.9rem;font-weight:600;">
+            <i class="fas fa-server c-p" style="margin-right:5px;"></i>${p.name} 
+            <span class="c-muted fw-4 fs-65" style="padding:1px 5px;border-radius:4px;border:1px solid var(--c-border-dark);vertical-align:middle;">${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span>
+          </h3>
           <span class="bd ${p.enabled?'bd-on':'bd-off'}">${p.enabled?'已启用':'未启用'}</span>
         </div>
         <p class="mu fc gp3" style="margin-top:3px;font-size:.75rem;">
