@@ -131,8 +131,10 @@ function addKeyRow(id) {
   const d = document.createElement('div')
   d.className = 'fc mb-3'
   d.dataset.kidx = cnt
-  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testKeyRow(\\'' + id + '\\',' + cnt + ')" title="测试"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="rmKeyRow(\\'' + id + '\\',' + cnt + ')"><i class="fas fa-times c-l"></i></button>'
+  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="btn btn-gh btn-xs" id="tk-' + id + '-' + cnt + '" title="测试"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" id="rk-' + id + '-' + cnt + '"><i class="fas fa-times c-l"></i></button>'
   c.appendChild(d)
+  document.getElementById('tk-' + id + '-' + cnt).addEventListener('click', function() { testKeyRow(id, cnt) })
+  document.getElementById('rk-' + id + '-' + cnt).addEventListener('click', function() { rmKeyRow(id, cnt) })
   inp.value = ''
   inp.focus()
 }
@@ -710,8 +712,10 @@ function addKeyRow(id) {
   const d = document.createElement('div')
   d.className = 'fc mb-3'
   d.dataset.kidx = cnt
-  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testKeyRow(\\'' + id + '\\',' + cnt + ')" title="测试"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="rmKeyRow(\\'' + id + '\\',' + cnt + ')"><i class="fas fa-times c-l"></i></button>'
+  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="btn btn-gh btn-xs" id="tk-' + id + '-' + cnt + '" title="测试"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" id="rk-' + id + '-' + cnt + '"><i class="fas fa-times c-l"></i></button>'
   c.appendChild(d)
+  document.getElementById('tk-' + id + '-' + cnt).addEventListener('click', function() { testKeyRow(id, cnt) })
+  document.getElementById('rk-' + id + '-' + cnt).addEventListener('click', function() { rmKeyRow(id, cnt) })
   inp.value = ''
   inp.focus()
 }
