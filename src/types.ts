@@ -102,6 +102,13 @@ export interface CreateProxyKeyRequest {
   expiresIn?: string // '30d' | '90d' | '180d' | '1y' | 'forever'
 }
 
+export interface DataBackup {
+  version: 1
+  exportedAt: string
+  providers: Provider[]
+  proxyKeys: ProxyKey[]
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean
   data?: T

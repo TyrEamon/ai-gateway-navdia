@@ -17,6 +17,10 @@ export async function setProviders(env: Env, providers: Provider[]): Promise<voi
   await env.KV.put(KV_KEYS.PROVIDERS, JSON.stringify(providers))
 }
 
+export async function replaceProviders(env: Env, providers: Provider[]): Promise<void> {
+  await setProviders(env, providers)
+}
+
 export async function addProvider(env: Env, provider: Provider): Promise<void> {
   const providers = await getProviders(env)
   providers.push(provider)
@@ -78,6 +82,10 @@ export async function getProxyKeys(env: Env): Promise<ProxyKey[]> {
 
 export async function setProxyKeys(env: Env, keys: ProxyKey[]): Promise<void> {
   await env.KV.put(KV_KEYS.PROXY_KEYS, JSON.stringify(keys))
+}
+
+export async function replaceProxyKeys(env: Env, keys: ProxyKey[]): Promise<void> {
+  await setProxyKeys(env, keys)
 }
 
 export async function addProxyKey(env: Env, key: ProxyKey): Promise<void> {

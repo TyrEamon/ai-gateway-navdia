@@ -450,6 +450,19 @@ ${H('管理')}
   </div>
   <div id="winnerLogs" class="winner-log-list"></div>
 </div>
+
+<!-- 数据备份 -->
+<div class="card">
+  <div class="card-hd">
+    <h2><i class="fas fa-database"></i>数据备份</h2>
+    <div class="fc gap-8">
+      <button class="btn btn-gh btn-xs" onclick="exportData()"><i class="fas fa-download"></i> 导出</button>
+      <button class="btn btn-gh btn-xs" onclick="document.getElementById('importFile').click()"><i class="fas fa-upload"></i> 导入</button>
+      <input id="importFile" class="hd" type="file" accept="application/json,.json" onchange="importDataFile(this)">
+    </div>
+  </div>
+  <p class="mu fs-77">导出/导入提供商、上游 Key、转发 Key；不包含登录会话和竞速日志。</p>
+</div>
 </main>
 
 <div id="modal" class="modal-o hd" onclick="if(event.target===this)closeM()">
@@ -464,7 +477,7 @@ ${H('管理')}
 </footer>
 
 <script>
-window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-5'
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-6'
 window.copyText = function(t, el) {
   const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
   if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
@@ -934,6 +947,58 @@ async function testMdl(id, mid, idx) {
   }
 }
 
+async function exportData() {
+  try {
+    const r = await fetch('/admin/api/export')
+    if (!r.ok) throw new Error('export failed')
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const stamp = new Date().toISOString().slice(0, 10)
+    a.href = url
+    a.download = 'nvidia-gateway-backup-' + stamp + '.json'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast('已导出备份', 'success')
+  } catch (e) {
+    toast('导出失败', 'error')
+  }
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = function() { resolve(String(reader.result || '')) }
+    reader.onerror = function() { reject(reader.error || new Error('read failed')) }
+    reader.readAsText(file)
+  })
+}
+
+async function importDataFile(input) {
+  const file = input.files && input.files[0]
+  input.value = ''
+  if (!file) return
+  if (!(await cM('导入会替换当前提供商和转发 Key，确定继续？'))) return
+  try {
+    const text = await readFileAsText(file)
+    const data = JSON.parse(text)
+    const r = await fetch('/admin/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    const d = await r.json()
+    if (d.success) {
+      toast('导入成功', 'success')
+      setTimeout(() => location.reload(), 600)
+    } else toast(d.message || '导入失败', 'error')
+  } catch (e) {
+    toast('导入失败：文件格式不正确', 'error')
+  }
+}
+
 // proxy keys
 async function genKey() {
   const name = await pM('输入 Key 名称（可选）')
@@ -1039,6 +1104,8 @@ Object.assign(window, {
   addMdl,
   rmMdl,
   testMdl,
+  exportData,
+  importDataFile,
   genKey,
   doGenKey,
   rmKey,

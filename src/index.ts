@@ -7,6 +7,8 @@ import { handleProxy, handleModels } from './proxy'
 import {
   handleStatus,
   handleGetRaceWinnerLogs,
+  handleExportData,
+  handleImportData,
   handleGetProviders,
   handleCreateProvider,
   handleUpdateProvider,
@@ -56,6 +58,8 @@ app.get('/admin', async (c) => renderAdminPage(c))
 
 app.get('/admin/api/status', handleStatus)
 app.get('/admin/api/race-winner-logs', handleGetRaceWinnerLogs)
+app.get('/admin/api/export', handleExportData)
+app.post('/admin/api/import', handleImportData)
 
 app.get('/admin/api/providers', handleGetProviders)
 app.post('/admin/api/providers', handleCreateProvider)

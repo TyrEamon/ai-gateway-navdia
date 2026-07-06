@@ -10,6 +10,8 @@ import {
   updateProxyKey,
   deleteProxyKey,
   getRaceWinnerLogs,
+  replaceProviders,
+  replaceProxyKeys,
 } from './storage'
 import { testModelConnection } from './proxy'
 import { PROXY_KEY_PREFIX, EXPIRY_OPTIONS, NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS } from './config'
@@ -22,6 +24,8 @@ import type {
   CreateProxyKeyRequest,
   TestModelRequest,
   TestApiKeyRequest,
+  DataBackup,
+  ProxyKey,
 } from './types'
 
 // ===== 系统状态 =====
@@ -39,6 +43,31 @@ function normalizeArray<T>(
     return (items as string[]).map(mapFn)
   }
   return items as T[]
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isProviderArray(value: unknown): value is Provider[] {
+  if (!Array.isArray(value)) return false
+  return value.every((item) => isObject(item) &&
+    typeof item.id === 'string' &&
+    typeof item.name === 'string' &&
+    typeof item.baseUrl === 'string' &&
+    Array.isArray(item.apiKeys) &&
+    Array.isArray(item.models) &&
+    typeof item.enabled === 'boolean')
+}
+
+function isProxyKeyArray(value: unknown): value is ProxyKey[] {
+  if (!Array.isArray(value)) return false
+  return value.every((item) => isObject(item) &&
+    typeof item.id === 'string' &&
+    typeof item.key === 'string' &&
+    typeof item.name === 'string' &&
+    typeof item.enabled === 'boolean' &&
+    typeof item.createdAt === 'string')
 }
 
 export async function handleStatus(c: Context<{ Bindings: Env }>) {
@@ -68,6 +97,53 @@ export async function handleStatus(c: Context<{ Bindings: Env }>) {
 export async function handleGetRaceWinnerLogs(c: Context<{ Bindings: Env }>) {
   const logs = await getRaceWinnerLogs(c.env, 50)
   return c.json<ApiResponse>({ success: true, data: logs })
+}
+
+export async function handleExportData(c: Context<{ Bindings: Env }>) {
+  const backup: DataBackup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    providers: await getProviders(c.env),
+    proxyKeys: await getProxyKeys(c.env),
+  }
+  const date = backup.exportedAt.slice(0, 10)
+  return new Response(JSON.stringify(backup, null, 2), {
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="nvidia-gateway-backup-${date}.json"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+export async function handleImportData(c: Context<{ Bindings: Env }>) {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json<ApiResponse>({ success: false, message: '导入文件不是有效 JSON' }, 400)
+  }
+
+  if (!isObject(body) || body.version !== 1 || !isProviderArray(body.providers) || !isProxyKeyArray(body.proxyKeys)) {
+    return c.json<ApiResponse>({ success: false, message: '备份文件格式不正确或版本不支持' }, 400)
+  }
+
+  const now = new Date().toISOString()
+  const providers = body.providers.map((provider) => ({
+    ...provider,
+    baseUrl: (provider.baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, ''),
+    apiType: provider.apiType || 'openai' as const,
+    updatedAt: now,
+  }))
+
+  await replaceProviders(c.env, providers)
+  await replaceProxyKeys(c.env, body.proxyKeys)
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: { providersCount: providers.length, proxyKeysCount: body.proxyKeys.length },
+    message: '导入成功',
+  })
 }
 
 // ===== 提供商 CRUD =====
