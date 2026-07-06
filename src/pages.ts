@@ -112,6 +112,12 @@ function copyText(t, el) {
   }).catch(() => {})
 }
 
+function apiRoot(url) {
+  let root = url.endsWith('/') ? url.slice(0, -1) : url
+  if (root.endsWith('/v1')) root = root.slice(0, -3)
+  return root
+}
+
 // provider api keys
 function getKeys(id) {
   const c = document.getElementById('keys-' + id)
@@ -153,7 +159,7 @@ async function testKeyRow(id, idx) {
   const tr = document.getElementById('tr-' + id)
   tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
   try {
-    const r = await fetch(url.replace(/\\/$/, '').replace(/\\/v1$/, '') + '/v1/models', {
+    const r = await fetch(apiRoot(url) + '/v1/models', {
       method: 'GET',
       headers: { 'Authorization': 'Bearer ' + k }
     })
@@ -182,7 +188,7 @@ function testNewAKey(btn) {
   if (!url) { toast('请先填写 API 地址', 'error'); return }
   const tr = document.getElementById('atestR')
   tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
-  fetch(url.replace(/\\/$/, '').replace(/\\/v1$/, '') + '/v1/models', {
+  fetch(apiRoot(url) + '/v1/models', {
     method: 'GET',
     headers: { 'Authorization': 'Bearer ' + k }
   }).then(r => {
