@@ -464,7 +464,7 @@ ${H('管理')}
 </footer>
 
 <script>
-window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-3'
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-4'
 window.copyText = function(t, el) {
   const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
   if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
@@ -532,7 +532,7 @@ window.genKey = async function() {
     const r = await fetch('/admin/api/proxy-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, expiresIn }) })
     const d = await r.json()
     if (d.success && d.data) {
-      alert('生成成功，请立即复制保存：\n' + d.data.key)
+      alert(['生成成功，请立即复制保存：', d.data.key].join(String.fromCharCode(10)))
       location.reload()
     } else alert(d.message || '生成失败')
   } catch (e) {
@@ -659,15 +659,29 @@ function showAdd() { document.getElementById('af').classList.remove('hd') }
 function hideAdd() { document.getElementById('af').classList.add('hd'); document.getElementById('amc').classList.add('hd') }
 
 function renderModelList(models) {
-  const h = (models || []).map(mid =>
-    '<div class="mdl-item">' +
-    '<i class="fas fa-cube"></i>' +
-    '<span class="fx1 cp ov" onclick="copyText(\'' + mid + '\',this)">' + mid + '</span>' +
-    '<button class="btn btn-gh btn-xs mdl-add-btn" onclick="addMdlToForm(\'' + mid + '\')" title="添加到表单">+</button></div>'
-  ).join('')
-  document.getElementById('amcl').innerHTML = h
-    ? '<div class="grid-2-gap6">' + h + '</div>'
-    : '<span class="mu">连接成功，未返回模型列表</span>'
+  const box = document.getElementById('amcl')
+  box.innerHTML = ''
+  const list = models || []
+  if (!list.length) {
+    box.innerHTML = '<span class="mu">连接成功，未返回模型列表</span>'
+  } else {
+    const wrap = document.createElement('div')
+    wrap.className = 'grid-2-gap6'
+    list.forEach(mid => {
+      const item = document.createElement('div')
+      item.className = 'mdl-item'
+      item.innerHTML = '<i class="fas fa-cube"></i><span class="fx1 cp ov"></span><button class="btn btn-gh btn-xs mdl-add-btn" title="添加到表单">+</button>'
+      const span = item.querySelector('span')
+      const btn = item.querySelector('button')
+      if (span && btn) {
+        span.textContent = mid
+        span.addEventListener('click', function() { copyText(mid, span) })
+        btn.addEventListener('click', function() { addMdlToForm(mid) })
+        wrap.appendChild(item)
+      }
+    })
+    box.appendChild(wrap)
+  }
   document.getElementById('amc').classList.remove('hd')
 }
 
