@@ -44,6 +44,13 @@ export interface TestModelRequest {
   modelId: string
 }
 
+export interface TestApiKeyRequest {
+  apiKey: string
+  baseUrl?: string
+  modelId?: string
+  strictModel?: boolean
+}
+
 export interface CreateProviderRequest {
   id: string
   name: string

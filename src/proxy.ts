@@ -370,43 +370,50 @@ export async function testModelConnection(
   modelId: string,
   _apiType?: 'openai' | 'anthropic'
 ): Promise<{ success: boolean; message: string; statusCode?: number }> {
-  try {
-    const cleanBase = (baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
-    const response = await fetch(`${cleanBase}/chat/completions`, {
-      method: 'POST',
-      headers: buildForwardHeaders(apiKey),
-      body: JSON.stringify({
-        model: modelId,
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 1,
-      }),
-      signal: AbortSignal.timeout(15000),
-    })
+  const cleanBase = (baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
+  let lastStatus: number | undefined
+  let lastMessage = 'NVIDIA connection failed'
 
-    if (response.ok) {
-      return { success: true, message: 'NVIDIA connection succeeded', statusCode: response.status }
-    }
-
-    let errorBody = ''
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const errorData = await response.json() as { error?: { message?: string } }
-      errorBody = errorData?.error?.message || JSON.stringify(errorData)
-    } catch {
-      errorBody = await response.text()
-    }
+      const response = await fetch(`${cleanBase}/chat/completions`, {
+        method: 'POST',
+        headers: buildForwardHeaders(apiKey),
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(15000),
+      })
 
-    return {
-      success: false,
-      message: `HTTP ${response.status}: ${errorBody.substring(0, 200)}`,
-      statusCode: response.status,
-    }
-  } catch (err) {
-    const error = err as Error
-    return {
-      success: false,
-      message: `NVIDIA connection failed: ${error.message?.substring(0, 200) || 'unknown error'}`,
+      if (response.ok) {
+        return { success: true, message: 'NVIDIA connection succeeded', statusCode: response.status }
+      }
+
+      lastStatus = response.status
+
+      if (isTransientNvidiaStatus(response.status)) {
+        lastMessage = `HTTP ${response.status}`
+        await cancelResponseBody(response)
+        continue
+      }
+
+      const errorBody = await readErrorSnippet(response, 200)
+      lastMessage = `HTTP ${response.status}: ${errorBody}`
+
+      if (response.status === 400 && looksTransientNvidiaError(errorBody)) {
+        continue
+      }
+
+      return { success: false, message: lastMessage, statusCode: response.status }
+    } catch (err) {
+      const error = err as Error
+      lastMessage = `NVIDIA connection failed: ${error.message?.substring(0, 200) || 'unknown error'}`
     }
   }
+
+  return { success: false, message: lastMessage, statusCode: lastStatus }
 }
 
 export async function handleProxy(c: Context<{ Bindings: Env }>) {

@@ -510,6 +510,42 @@ function tog(id) {
 function showAdd() { document.getElementById('af').classList.remove('hd') }
 function hideAdd() { document.getElementById('af').classList.add('hd'); document.getElementById('amc').classList.add('hd') }
 
+function renderModelList(models) {
+  const h = (models || []).map(mid =>
+    '<div class="mdl-item">' +
+    '<i class="fas fa-cube"></i>' +
+    '<span class="fx1 cp ov" onclick="copyText(\'' + mid + '\',this)">' + mid + '</span>' +
+    '<button class="btn btn-gh btn-xs mdl-add-btn" onclick="addMdlToForm(\'' + mid + '\')" title="添加到表单">+</button></div>'
+  ).join('')
+  document.getElementById('amcl').innerHTML = h
+    ? '<div class="grid-2-gap6">' + h + '</div>'
+    : '<span class="mu">连接成功，未返回模型列表</span>'
+  document.getElementById('amc').classList.remove('hd')
+}
+
+function showTestResult(el, data) {
+  el.innerHTML = data.success
+    ? '<div class="al al-s"><i class="fas fa-check-circle"></i> 连接成功' + (data.statusCode ? ' (HTTP ' + data.statusCode + ')' : '') + '</div>'
+    : '<div class="al al-e"><i class="fas fa-times-circle"></i> ' + (data.message || '连接失败') + '</div>'
+  setTimeout(() => el.innerHTML = '', 5000)
+}
+
+async function testApiKey(apiKey, baseUrl, modelId, resultEl, showModels, strictModel) {
+  const r = await fetch('/admin/api/test-api-key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey, baseUrl, modelId, strictModel })
+  })
+  const d = await r.json()
+  if (d.success && d.data) {
+    showTestResult(resultEl, d.data)
+    if (showModels && d.data.success) renderModelList(d.data.models || [])
+  } else {
+    resultEl.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> ' + (d.message || '测试失败') + '</div>'
+    setTimeout(() => resultEl.innerHTML = '', 5000)
+  }
+}
+
 // provider api keys (add form)
 function addAKeyRow() {
   const c = document.getElementById('akeys')
@@ -523,36 +559,10 @@ function testNewAKey(btn) {
   const inp = btn.parentElement.querySelector('.aki'), k = inp.value.trim()
   if (!k) { toast('请输入 API Key', 'error'); return }
   const url = document.getElementById('aurl').value.trim() || '${NVIDIA_DEFAULT_BASE_URL}'
-  const apiType = document.getElementById('afmt').value
-  const testUrl = url.replace(/\\/$/, '') + '/models'
-  const headers = apiType === 'anthropic'
-    ? { 'x-api-key': k, 'anthropic-version': '2023-06-01' }
-    : { 'Authorization': 'Bearer ' + k }
   const tr = document.getElementById('atestR')
   tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
-  fetch(testUrl, { method: 'GET', headers }).then(async r => {
-    if (r.ok) {
-      try {
-        const d = await r.json()
-        const models = d.data || []
-        const h = models.map(m =>
-          '<div class="mdl-item">' +
-          '<i class="fas fa-cube"></i>' +
-          '<span class="fx1 cp ov" onclick="copyText(\\'' + m.id + '\\',this)">' + m.id + '</span>' +
-          '<button class="btn btn-gh btn-xs mdl-add-btn" onclick="addMdlToForm(\\'' + m.id + '\\')" title="添加到表单">+</button></div>'
-        ).join('')
-        document.getElementById('amcl').innerHTML = h
-          ? '<div class="grid-2-gap6">' + h + '</div>'
-          : '<span class="mu">未返回模型列表</span>'
-        document.getElementById('amc').classList.remove('hd')
-      } catch (e) {}
-      tr.innerHTML = '<div class="al al-s"><i class="fas fa-check-circle"></i> 连接成功</div>'
-    } else {
-      document.getElementById('amc').classList.add('hd')
-      tr.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> HTTP ' + r.status + '</div>'
-    }
-    setTimeout(() => tr.innerHTML = '', 5000)
-  }).catch(() => {
+  const mid = document.querySelector('#amodels .ami')?.value.trim() || undefined
+  testApiKey(k, url, mid, tr, true, false).catch(() => {
     document.getElementById('amc').classList.add('hd')
     tr.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 连接失败</div>'
     setTimeout(() => tr.innerHTML = '', 5000)
@@ -583,23 +593,9 @@ function testNewMdl(btn) {
   const url = document.getElementById('aurl').value.trim() || '${NVIDIA_DEFAULT_BASE_URL}'
   const akeys = document.querySelectorAll('#akeys .aki')
   const apiKey = Array.from(akeys).map(inp => inp.value.trim()).filter(Boolean)[0] || 'dummy'
-  const apiType = document.getElementById('afmt').value
-  const testUrl = url.replace(/\\/$/, '') + '/' + (apiType === 'anthropic' ? 'messages' : 'chat/completions')
-  const headers = apiType === 'anthropic'
-    ? { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
-    : { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
   const tr = document.getElementById('atestR')
   tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
-  fetch(testUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model: mid, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 })
-  }).then(r => {
-    tr.innerHTML = r.ok
-      ? '<div class="al al-s"><i class="fas fa-check-circle"></i> 连接成功</div>'
-      : '<div class="al al-e"><i class="fas fa-times-circle"></i> HTTP ' + r.status + '</div>'
-    setTimeout(() => tr.innerHTML = '', 5000)
-  }).catch(() => {
+  testApiKey(apiKey, url, mid, tr, false, true).catch(() => {
     tr.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 连接失败</div>'
     setTimeout(() => tr.innerHTML = '', 5000)
   })
@@ -669,19 +665,11 @@ async function testKeyRow(id, idx) {
   const k = document.getElementById('k-' + id + '-' + idx).value.trim()
   const url = document.getElementById('url-' + id).value.trim()
   if (!k) { toast('请输入 API Key', 'error'); return }
-  const apiType = document.getElementById('at-' + id).value
-  const testUrl = url.replace(/\\/$/, '') + '/models'
-  const headers = apiType === 'anthropic'
-    ? { 'x-api-key': k, 'anthropic-version': '2023-06-01' }
-    : { 'Authorization': 'Bearer ' + k }
   const tr = document.getElementById('tr-' + id)
   tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
+  const mid = document.getElementById('ml-' + id)?.querySelector('.fx1')?.value.trim() || undefined
   try {
-    const r = await fetch(testUrl, { method: 'GET', headers })
-    tr.innerHTML = r.ok
-      ? '<div class="al al-s"><i class="fas fa-check-circle"></i> 连接成功</div>'
-      : '<div class="al al-e"><i class="fas fa-times-circle"></i> HTTP ' + r.status + '</div>'
-    setTimeout(() => tr.innerHTML = '', 5000)
+    await testApiKey(k, url, mid, tr, false, false)
   } catch (e) {
     tr.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 连接失败</div>'
     setTimeout(() => tr.innerHTML = '', 5000)

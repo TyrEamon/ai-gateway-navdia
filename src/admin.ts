@@ -20,6 +20,7 @@ import type {
   UpdateProviderRequest,
   CreateProxyKeyRequest,
   TestModelRequest,
+  TestApiKeyRequest,
 } from './types'
 
 // ===== 系统状态 =====
@@ -179,6 +180,56 @@ export async function handleTestModel(c: Context<{ Bindings: Env }>) {
   return c.json<ApiResponse>({
     success: true,
     data: result,
+  })
+}
+
+async function testNvidiaModelsEndpoint(baseUrl: string, apiKey: string): Promise<{ success: boolean; statusCode?: number; models: string[]; message?: string }> {
+  try {
+    const cleanBase = (baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
+    const response = await fetch(`${cleanBase}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    })
+
+    if (!response.ok) return { success: false, statusCode: response.status, models: [], message: `HTTP ${response.status}` }
+    const data = await response.json() as { data?: Array<{ id?: string }> }
+    const models = (data.data || []).map((model) => model.id).filter((id): id is string => !!id)
+    return { success: true, statusCode: response.status, models }
+  } catch {
+    return { success: false, models: [], message: 'NVIDIA models endpoint failed' }
+  }
+}
+
+export async function handleTestApiKey(c: Context<{ Bindings: Env }>) {
+  const body = await c.req.json<TestApiKeyRequest>()
+  const apiKey = body.apiKey?.trim()
+  if (!apiKey) {
+    return c.json<ApiResponse>({ success: false, message: 'apiKey 为必填项' }, 400)
+  }
+
+  const baseUrl = (body.baseUrl?.trim() || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
+  const modelId = body.modelId?.trim() || NVIDIA_DEFAULT_MODELS[0]
+  const modelsResult = await testNvidiaModelsEndpoint(baseUrl, apiKey)
+  if (!body.strictModel && modelsResult.success) {
+    return c.json<ApiResponse>({
+      success: true,
+      data: { success: true, message: 'NVIDIA key is reachable', statusCode: modelsResult.statusCode, modelId, models: modelsResult.models },
+    })
+  }
+
+  const completionResult = await testModelConnection(baseUrl, apiKey, modelId, 'openai')
+  const result = body.strictModel
+    ? completionResult
+    : completionResult.success
+      ? completionResult
+      : modelsResult.success
+        ? { success: true, message: `NVIDIA key is reachable; completion test returned ${completionResult.message}`, statusCode: modelsResult.statusCode }
+        : completionResult
+
+  return c.json<ApiResponse>({
+    success: true,
+    data: { ...result, modelId, models: modelsResult.models },
   })
 }
 

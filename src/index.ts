@@ -11,6 +11,7 @@ import {
   handleUpdateProvider,
   handleDeleteProvider,
   handleTestModel,
+  handleTestApiKey,
   handleGetProxyKeys,
   handleCreateProxyKey,
   handleUpdateProxyKey,
@@ -66,6 +67,7 @@ app.post('/admin/api/providers', handleCreateProvider)
 app.put('/admin/api/providers/:id', handleUpdateProvider)
 app.delete('/admin/api/providers/:id', handleDeleteProvider)
 app.post('/admin/api/providers/:id/test-model', handleTestModel)
+app.post('/admin/api/test-api-key', handleTestApiKey)
 
 // 转发 Key 管理
 app.get('/admin/api/proxy-keys', handleGetProxyKeys)
