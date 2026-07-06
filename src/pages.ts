@@ -464,7 +464,7 @@ ${H('管理')}
 </footer>
 
 <script>
-window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-2'
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-3'
 window.copyText = function(t, el) {
   const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
   if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
@@ -497,6 +497,47 @@ window.toggleKeyVis = function(id) {
   if (!el) return
   const full = el.dataset.full || ''
   el.textContent = el.textContent.includes('****') ? full : (full.length > 12 ? full.substring(0, 8) + '****' + full.substring(full.length - 4) : full)
+}
+window.loadWinnerLogs = async function() {
+  const box = document.getElementById('winnerLogs')
+  if (box) box.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 加载中...</span>'
+  try {
+    const r = await fetch('/admin/api/race-winner-logs')
+    const d = await r.json()
+    const logs = d.success && d.data ? d.data : []
+    if (!box) return
+    if (!logs.length) { box.innerHTML = '<p class="mu fs-i">暂无成功竞速日志</p>'; return }
+    box.innerHTML = logs.map(log => '<div class="winner-log-row"><div class="winner-log-main"><strong>' + (log.keyLabel || '-') + '</strong><span class="bd bd-info">#' + (log.keyFingerprint || '-') + '</span><span class="winner-model">' + (log.model || '-') + '</span></div><div class="winner-log-meta"><span><i class="fas fa-clock"></i> ' + new Date(log.timestamp).toLocaleString() + '</span><span><i class="fas fa-bolt"></i> ' + (log.latencyMs || 0) + 'ms</span><span><i class="fas fa-redo"></i> 第 ' + (log.attempt || 1) + ' 次</span><span><i class="fas fa-layer-group"></i> ' + (log.racedKeys || 0) + ' keys</span><span>HTTP ' + (log.statusCode || '-') + '</span></div></div>').join('')
+  } catch (e) {
+    if (box) box.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 日志加载失败</div>'
+  }
+}
+window.testMdl = async function(id, mid, idx) {
+  const tr = document.getElementById('tr-' + id)
+  if (tr) tr.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 测试中...</span>'
+  try {
+    const r = await fetch('/admin/api/providers/' + encodeURIComponent(id) + '/test-model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modelId: mid }) })
+    const d = await r.json()
+    if (tr) tr.innerHTML = d.success && d.data && d.data.success ? '<div class="al al-s"><i class="fas fa-check-circle"></i> 连接成功</div>' : '<div class="al al-e"><i class="fas fa-times-circle"></i> ' + ((d.data && d.data.message) || d.message || '连接失败') + '</div>'
+  } catch (e) {
+    if (tr) tr.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 请求失败</div>'
+  }
+  if (tr) setTimeout(() => tr.innerHTML = '', 5000)
+}
+window.genKey = async function() {
+  const name = prompt('输入 Key 名称（可选）')
+  if (name === null) return
+  const expiresIn = prompt('有效期：30d / 90d / 180d / 1y / forever', 'forever') || 'forever'
+  try {
+    const r = await fetch('/admin/api/proxy-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, expiresIn }) })
+    const d = await r.json()
+    if (d.success && d.data) {
+      alert('生成成功，请立即复制保存：\n' + d.data.key)
+      location.reload()
+    } else alert(d.message || '生成失败')
+  } catch (e) {
+    alert('生成失败')
+  }
 }
 </script>
 
