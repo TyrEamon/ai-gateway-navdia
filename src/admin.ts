@@ -11,7 +11,7 @@ import {
   deleteProxyKey,
 } from './storage'
 import { testModelConnection } from './proxy'
-import { PROXY_KEY_PREFIX, EXPIRY_OPTIONS } from './config'
+import { PROXY_KEY_PREFIX, EXPIRY_OPTIONS, NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS } from './config'
 import type {
   Env,
   ApiResponse,
@@ -72,26 +72,37 @@ export async function handleGetProviders(c: Context<{ Bindings: Env }>) {
 
 export async function handleCreateProvider(c: Context<{ Bindings: Env }>) {
   const body = await c.req.json<CreateProviderRequest>()
+  const id = body.id?.trim()
+  const name = body.name?.trim()
 
-  if (!body.id || !body.name || !body.baseUrl) {
-    return c.json<ApiResponse>({ success: false, message: 'id、name、baseUrl 为必填项' }, 400)
+  if (!id || !name) {
+    return c.json<ApiResponse>({ success: false, message: 'id、name 为必填项' }, 400)
   }
 
   const providers = await getProviders(c.env)
-  if (providers.some((p) => p.id === body.id)) {
-    return c.json<ApiResponse>({ success: false, message: `提供商 id "${body.id}" 已存在` }, 409)
+  if (providers.some((p) => p.id === id)) {
+    return c.json<ApiResponse>({ success: false, message: `提供商 id "${id}" 已存在` }, 409)
+  }
+
+  const apiKeys = normalizeArray(body.apiKeys, (key) => ({ key, enabled: true }))
+    .map((entry) => ({ ...entry, key: entry.key.trim() }))
+    .filter((entry) => entry.key)
+  const models = normalizeArray(body.models, (modelId) => ({ id: modelId, enabled: true }))
+    .map((model) => ({ ...model, id: model.id.trim() }))
+    .filter((model) => model.id)
+
+  if (apiKeys.length === 0) {
+    return c.json<ApiResponse>({ success: false, message: 'apiKeys 至少需要一个' }, 400)
   }
 
   const now = new Date().toISOString()
   const provider: Provider = {
-    id: body.id,
-    name: body.name,
-    baseUrl: body.baseUrl.replace(/\/$/, ''),
+    id,
+    name,
+    baseUrl: (body.baseUrl?.trim() || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, ''),
     apiType: body.apiType || 'openai',
-apiKeys: normalizeArray(body.apiKeys, (k) => ({ key: k, enabled: true })),
-    models: body.models
-      ? normalizeArray(body.models, (m) => ({ id: m, enabled: true }))
-      : [],
+    apiKeys,
+    models: models.length > 0 ? models : NVIDIA_DEFAULT_MODELS.map((modelId) => ({ id: modelId, enabled: true })),
     enabled: body.enabled !== undefined ? body.enabled : true,
     createdAt: now,
     updatedAt: now,
@@ -108,9 +119,11 @@ export async function handleUpdateProvider(c: Context<{ Bindings: Env }>) {
 
   const updates: Partial<Provider> = {}
   if (body.name !== undefined) updates.name = body.name
-  if (body.baseUrl !== undefined) updates.baseUrl = body.baseUrl.replace(/\/$/, '')
+  if (body.baseUrl !== undefined) {
+    updates.baseUrl = (body.baseUrl.trim() || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
+  }
   if (body.apiType !== undefined) updates.apiType = body.apiType
-if (body.apiKeys !== undefined) {
+  if (body.apiKeys !== undefined) {
     updates.apiKeys = normalizeArray(body.apiKeys, (k) => ({ key: k, enabled: true }))
   }
   if (body.enabled !== undefined) updates.enabled = body.enabled

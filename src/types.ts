@@ -47,7 +47,7 @@ export interface TestModelRequest {
 export interface CreateProviderRequest {
   id: string
   name: string
-  baseUrl: string
+  baseUrl?: string
   apiType?: 'openai'
   apiKeys?: Array<{ key: string; enabled: boolean }>
   models?: Array<{ id: string; enabled: boolean }> | string[]

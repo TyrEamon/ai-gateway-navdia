@@ -1,6 +1,6 @@
 import { Context } from 'hono'
 import { getProviders, getProxyKeys } from './storage'
-import { SITE_CONFIG } from './config'
+import { NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS, SITE_CONFIG } from './config'
 import type { Env } from './types'
 import { CSS_CONTENT } from './pages.css'
 
@@ -290,7 +290,7 @@ ${H('管理')}
       <div class="fg"><label>名称</label><input type="text" id="anm" placeholder="NVIDIA"></div>
       <div class="fg"><label>ID</label><input type="text" id="aid" placeholder="nvidia"></div>
     </div>
-    <div class="fg"><label>API 地址</label><input type="url" id="aurl" placeholder="https://integrate.api.nvidia.com/v1"></div>
+    <div class="fg"><label>API 地址</label><input type="url" id="aurl" value="${NVIDIA_DEFAULT_BASE_URL}" placeholder="${NVIDIA_DEFAULT_BASE_URL}"></div>
     <div class="fg">
       <label>API 格式</label>
       <select id="afmt" class="select-sm">
@@ -309,11 +309,12 @@ ${H('管理')}
     </div>
     <div class="fg"><label>模型 ID <span class="mu">（支持多个）</span></label>
       <div id="amodels">
-        <div class="fc mb-4"><input type="text" placeholder="meta/llama-3.1-70b-instruct" class="fx1 ami">
+        ${NVIDIA_DEFAULT_MODELS.map((modelId) => `
+        <div class="fc mb-4"><input type="text" value="${modelId}" class="fx1 ami">
           <label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label>
           <button class="btn btn-gh btn-xs" onclick="testNewMdl(this)" title="测试"><i class="fas fa-plug"></i></button>
           <button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>
-        </div>
+        </div>`).join('')}
       </div>
       <button class="btn btn-gh btn-xs" onclick="addMdlRow()"><i class="fas fa-plus"></i> 添加模型</button>
     </div>
@@ -521,8 +522,7 @@ function addAKeyRow() {
 function testNewAKey(btn) {
   const inp = btn.parentElement.querySelector('.aki'), k = inp.value.trim()
   if (!k) { toast('请输入 API Key', 'error'); return }
-  const url = document.getElementById('aurl').value.trim()
-  if (!url) { toast('请先填写 API 地址', 'error'); return }
+  const url = document.getElementById('aurl').value.trim() || '${NVIDIA_DEFAULT_BASE_URL}'
   const apiType = document.getElementById('afmt').value
   const testUrl = url.replace(/\\/$/, '') + '/models'
   const headers = apiType === 'anthropic'
@@ -564,7 +564,7 @@ function addMdlRow() {
   const c = document.getElementById('amodels')
   const d = document.createElement('div')
   d.className = 'fc mb-4'
-  d.innerHTML = '<input type="text" placeholder="meta/llama-3.1-70b-instruct" class="fx1 ami"><label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testNewMdl(this)"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>'
+  d.innerHTML = '<input type="text" placeholder="deepseek-ai/deepseek-v4-flash" class="fx1 ami"><label class="tg"><input type="checkbox" checked class="ame"><span class="sl"></span></label><button class="btn btn-gh btn-xs" onclick="testNewMdl(this)"><i class="fas fa-plug"></i></button><button class="btn btn-gh btn-xs" onclick="this.parentElement.remove()"><i class="fas fa-times c-l"></i></button>'
   c.appendChild(d)
 }
 
@@ -580,7 +580,7 @@ function testNewMdl(btn) {
   const inp = btn.parentElement.querySelector('.ami')
   const mid = inp.value.trim()
   if (!mid) { toast('请输入模型 ID', 'error'); return }
-  const url = document.getElementById('aurl').value.trim()
+  const url = document.getElementById('aurl').value.trim() || '${NVIDIA_DEFAULT_BASE_URL}'
   const akeys = document.querySelectorAll('#akeys .aki')
   const apiKey = Array.from(akeys).map(inp => inp.value.trim()).filter(Boolean)[0] || 'dummy'
   const apiType = document.getElementById('afmt').value
@@ -621,7 +621,8 @@ async function createProv() {
     return mid ? { id: mid, enabled: en } : null
   }).filter(Boolean)
   const enabled = document.getElementById('aen').checked
-  if (!nm || !id || !url) { toast('请填写名称、ID 和 API 地址', 'error'); return }
+  if (!nm || !id) { toast('请填写名称和 ID', 'error'); return }
+  if (keys.length === 0) { toast('请填写至少一个 API Key', 'error'); return }
   const r = await fetch('/admin/api/providers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

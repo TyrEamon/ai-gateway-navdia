@@ -1,6 +1,6 @@
 # NVIDIA Gateway
 
-基于 Cloudflare Workers + Hono 的 NVIDIA OpenAI-compatible API 代理网关。这个版本已经改成 NVIDIA 专用：客户端继续请求 `/v1/*`，请求体里的 `model` 使用 NVIDIA 原始模型 ID，例如 `meta/llama-3.1-70b-instruct`，不再添加 `nvidia/` 或其他提供商前缀。
+基于 Cloudflare Workers + Hono 的 NVIDIA OpenAI-compatible API 代理网关。这个版本已经改成 NVIDIA 专用：客户端继续请求 `/v1/*`，请求体里的 `model` 使用 NVIDIA 原始模型 ID，例如 `deepseek-ai/deepseek-v4-flash`，不再添加 `nvidia/` 或其他提供商前缀。
 
 ## 特性
 
@@ -56,7 +56,7 @@ curl https://你的域名/v1/chat/completions \
   -H "Authorization: Bearer sk_cf_xxx" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "meta/llama-3.1-70b-instruct",
+    "model": "deepseek-ai/deepseek-v4-flash",
     "messages": [{ "role": "user", "content": "hi" }],
     "max_tokens": 64
   }'

@@ -15,6 +15,14 @@ export const SESSION_TTL = 7 * 24 * 60 * 60
 
 export const PROXY_KEY_PREFIX = 'sk_cf_'
 
+export const NVIDIA_DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1'
+
+export const NVIDIA_DEFAULT_MODELS = [
+  'minimaxai/minimax-m2.7',
+  'deepseek-ai/deepseek-v4-flash',
+  'deepseek-ai/deepseek-v4-pro',
+] as const
+
 export const KV_KEYS = {
   PROVIDERS: 'providers',
   PROXY_KEYS: 'proxy:keys',
@@ -35,15 +43,10 @@ export const DEFAULT_PROVIDERS: Provider[] = [
   {
     id: 'nvidia',
     name: 'NVIDIA',
-    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    baseUrl: NVIDIA_DEFAULT_BASE_URL,
     apiType: 'openai',
     apiKeys: [],
-    models: [
-      { id: 'meta/llama-3.1-405b-instruct', enabled: true },
-      { id: 'meta/llama-3.1-70b-instruct', enabled: true },
-      { id: 'meta/llama-3.1-8b-instruct', enabled: true },
-      { id: 'nvidia/llama-3.1-nemotron-70b-instruct', enabled: true },
-    ],
+    models: NVIDIA_DEFAULT_MODELS.map((id) => ({ id, enabled: true })),
     enabled: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

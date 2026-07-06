@@ -23,7 +23,7 @@ NVIDIA 上游 API Key 在管理后台的 `nvidia` 提供商里配置，客户端
   "object": "list",
   "data": [
     {
-      "id": "meta/llama-3.1-70b-instruct",
+      "id": "deepseek-ai/deepseek-v4-flash",
       "provider": "nvidia",
       "provider_name": "NVIDIA",
       "object": "model",
@@ -38,14 +38,14 @@ NVIDIA 上游 API Key 在管理后台的 `nvidia` 提供商里配置，客户端
 
 ### POST `/v1/chat/completions`
 
-请求体按 NVIDIA OpenAI-compatible API 原样转发。`model` 字段必须使用 NVIDIA 原始模型 ID，例如 `meta/llama-3.1-70b-instruct`。
+请求体按 NVIDIA OpenAI-compatible API 原样转发。`model` 字段必须使用 NVIDIA 原始模型 ID，例如 `deepseek-ai/deepseek-v4-flash`。
 
 ```bash
 curl https://你的域名/v1/chat/completions \
   -H "Authorization: Bearer sk_cf_xxx" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "meta/llama-3.1-70b-instruct",
+    "model": "deepseek-ai/deepseek-v4-flash",
     "messages": [{ "role": "user", "content": "hi" }],
     "stream": true
   }'
