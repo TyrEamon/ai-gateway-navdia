@@ -464,6 +464,43 @@ ${H('管理')}
 </footer>
 
 <script>
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-2'
+window.copyText = function(t, el) {
+  const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
+  if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
+  if (!i) return
+  const oc = i.className
+  const os = i.style.color
+  i.className = 'fas fa-check'
+  i.style.color = '#16a34a'
+  setTimeout(() => { i.className = oc; i.style.color = os }, 3000)
+}
+window.tog = function(id) {
+  const d = document.getElementById('dt-' + id)
+  const c = document.getElementById('ch-' + id)
+  if (!d) return
+  d.classList.toggle('open')
+  if (c) c.style.transform = d.classList.contains('open') ? 'rotate(90deg)' : ''
+}
+window.showAdd = function() {
+  const el = document.getElementById('af')
+  if (el) el.classList.remove('hd')
+}
+window.hideAdd = function() {
+  const af = document.getElementById('af')
+  const amc = document.getElementById('amc')
+  if (af) af.classList.add('hd')
+  if (amc) amc.classList.add('hd')
+}
+window.toggleKeyVis = function(id) {
+  const el = document.getElementById('kv-' + id)
+  if (!el) return
+  const full = el.dataset.full || ''
+  el.textContent = el.textContent.includes('****') ? full : (full.length > 12 ? full.substring(0, 8) + '****' + full.substring(full.length - 4) : full)
+}
+</script>
+
+<script>
 let winnerLogs = ${winnerLogsJson}
 
 function fmtWinnerTime(ts) {
