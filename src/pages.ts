@@ -898,6 +898,45 @@ async function toggleProxyKey(id, checked) {
     }
   } else toast(d.message || '操作失败', 'error')
 }
+
+Object.assign(window, {
+  loadWinnerLogs,
+  copyText,
+  showM,
+  closeM,
+  cM,
+  pM,
+  aM,
+  toast,
+  tog,
+  showAdd,
+  hideAdd,
+  renderModelList,
+  showTestResult,
+  testApiKey,
+  addAKeyRow,
+  testNewAKey,
+  addMdlRow,
+  addMdlToForm,
+  testNewMdl,
+  createProv,
+  getKeys,
+  addKeyRow,
+  rmKeyRow,
+  testKeyRow,
+  getMdl,
+  save,
+  del,
+  addMdl,
+  rmMdl,
+  testMdl,
+  genKey,
+  doGenKey,
+  rmKey,
+  togglePb,
+  toggleKeyVis,
+  toggleProxyKey,
+})
 </script>
 </body></html>`)
 }
