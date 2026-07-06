@@ -1,6 +1,6 @@
 import { Context } from 'hono'
 import { addRaceWinnerLog, getProvider, getProviders } from './storage'
-import type { ApiKeyEntry, Env, Provider, ProxyRequestBody, RaceWinnerLog } from './types'
+import type { ApiKeyEntry, Env, Provider, ProxyRequestBody, RaceParticipant, RaceWinnerLog } from './types'
 
 interface NvidiaRacingConfig {
   maxRacingKeys: number
@@ -11,9 +11,15 @@ interface NvidiaRacingConfig {
 
 interface RacingTask {
   id: number
-  key: ApiKeyEntry
+  key: RacingKey
   controller: AbortController
   promise: Promise<SettledRacingTask>
+}
+
+interface RacingKey {
+  provider: Provider
+  key: ApiKeyEntry
+  sourceKeyIndex: number
 }
 
 type KeyWorkerResult =
@@ -80,12 +86,27 @@ function isNvidiaProvider(provider: Provider): boolean {
   return text.includes('nvidia') || text.includes('integrate.api.nvidia.com')
 }
 
-async function getNvidiaProvider(env: Env): Promise<Provider | null> {
+async function getPrimaryNvidiaProvider(env: Env): Promise<Provider | null> {
   const configured = await getProvider(env, NVIDIA_PROVIDER_ID)
   if (configured) return configured
 
   const providers = await getProviders(env)
   return providers.find(isNvidiaProvider) || null
+}
+
+async function getNvidiaProviders(env: Env): Promise<Provider[]> {
+  const providers = await getProviders(env)
+  return providers.filter((provider) => provider.enabled && isNvidiaProvider(provider))
+}
+
+function getEnabledRacingKeys(providers: Provider[]): RacingKey[] {
+  const keys: RacingKey[] = []
+  for (const provider of providers) {
+    provider.apiKeys.forEach((key, sourceKeyIndex) => {
+      if (key.enabled) keys.push({ provider, key, sourceKeyIndex })
+    })
+  }
+  return keys
 }
 
 function buildForwardHeaders(apiKey: string): Record<string, string> {
@@ -171,8 +192,10 @@ async function createRaceWinnerLog(params: {
   path: string
   winnerKey: string
   keyIndex: number
+  sourceKeyIndex: number
   attempt: number
   racedKeys: number
+  participants: RaceParticipant[]
   latencyMs: number
   statusCode: number
 }): Promise<RaceWinnerLog> {
@@ -183,14 +206,17 @@ async function createRaceWinnerLog(params: {
     id,
     timestamp,
     providerId: params.provider.id,
+    providerName: params.provider.name,
     model: params.model,
     method: params.method,
     path: params.path,
     keyIndex: params.keyIndex,
+    sourceKeyIndex: params.sourceKeyIndex,
     keyLabel: maskKey(params.winnerKey),
     keyFingerprint: await keyFingerprint(params.winnerKey),
     attempt: params.attempt,
     racedKeys: params.racedKeys,
+    participants: params.participants,
     latencyMs: params.latencyMs,
     statusCode: params.statusCode,
   }
@@ -297,14 +323,14 @@ function abortLosers(tasks: RacingTask[], winnerId?: number): void {
 
 async function raceNvidiaKeys(params: {
   c: Context<{ Bindings: Env }>
-  provider: Provider
-  enabledKeys: ApiKeyEntry[]
+  fallbackProvider: Provider
+  racingKeys: RacingKey[]
   forwardUrl: string
   forwardBody: ProxyRequestBody
   method: string
 }): Promise<Response> {
   const config = getNvidiaRacingConfig(params.c.env)
-  const selectedKeys = shuffled(params.enabledKeys).slice(0, Math.min(params.enabledKeys.length, config.maxRacingKeys))
+  const selectedKeys = shuffled(params.racingKeys).slice(0, Math.min(params.racingKeys.length, config.maxRacingKeys))
 
   const tasks: RacingTask[] = []
   const pending = new Set<Promise<SettledRacingTask>>()
@@ -316,7 +342,7 @@ async function raceNvidiaKeys(params: {
     const controller = new AbortController()
     const promise = runKeyWorker({
       keyIndex: i,
-      apiKey: selectedKeys[i].key,
+      apiKey: selectedKeys[i].key.key,
       forwardUrl: params.forwardUrl,
       method: params.method,
       body: params.forwardBody,
@@ -350,36 +376,53 @@ async function raceNvidiaKeys(params: {
       if (settledTask) pending.delete(settledTask.promise)
 
       if (settled.result.type === 'success') {
+        const successResult = settled.result
         winnerId = settled.taskId
         clearTimeout(overallTimeoutId)
         abortLosers(tasks, winnerId)
         void Promise.allSettled([...pending])
-        const winnerKey = selectedKeys[settled.result.keyIndex]?.key || ''
+        const winnerSlot = successResult.keyIndex
+        const winnerAttempt = successResult.attempt
+        const sourceKeyIndex = selectedKeys[winnerSlot]?.sourceKeyIndex ?? winnerSlot
+        const winner = selectedKeys[winnerSlot]
+        const winnerKey = winner?.key.key || ''
+        const winnerProvider = winner?.provider || params.fallbackProvider
         const latencyMs = Date.now() - startedAt
-        const response = buildProxyResponse(settled.result.response)
+        const response = buildProxyResponse(successResult.response)
         const requestUrl = new URL(params.c.req.url)
         const statusCode = response.status
-        const logPromise = createRaceWinnerLog({
-          provider: params.provider,
-          model: params.forwardBody.model,
-          method: params.method,
-          path: requestUrl.pathname,
-          winnerKey,
-          keyIndex: settled.result.keyIndex,
-          attempt: settled.result.attempt,
-          racedKeys: selectedKeys.length,
-          latencyMs,
-          statusCode,
-        })
+        const logPromise = Promise.all(selectedKeys.map(async (entry) => ({
+          providerId: entry.provider.id,
+          providerName: entry.provider.name,
+          keyIndex: entry.sourceKeyIndex,
+          keyLabel: maskKey(entry.key.key),
+          keyFingerprint: await keyFingerprint(entry.key.key),
+        })))
+          .then((participants) => createRaceWinnerLog({
+            provider: winnerProvider,
+            model: params.forwardBody.model,
+            method: params.method,
+            path: requestUrl.pathname,
+            winnerKey,
+            keyIndex: winnerSlot,
+            sourceKeyIndex,
+            attempt: winnerAttempt,
+            racedKeys: selectedKeys.length,
+            participants,
+            latencyMs,
+            statusCode,
+          }))
           .then((log) => addRaceWinnerLog(params.c.env, log))
           .catch((err) => console.error('race winner log write failed:', errorMessage(err)))
         params.c.executionCtx.waitUntil(logPromise)
         console.log(JSON.stringify({
           message: 'nvidia_race_winner',
-          provider: params.provider.id,
+          provider: winnerProvider.id,
+          providerName: winnerProvider.name,
           racedKeys: selectedKeys.length,
-          keyIndex: settled.result.keyIndex,
-          attempt: settled.result.attempt,
+          keyIndex: winnerSlot,
+          sourceKeyIndex,
+          attempt: winnerAttempt,
           latencyMs,
         }))
         return response
@@ -491,14 +534,15 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
       return c.json({ error: { message: 'Missing model parameter', type: 'invalid_request_error' } }, 400)
     }
 
-    const provider = await getNvidiaProvider(c.env)
+    const nvidiaProviders = await getNvidiaProviders(c.env)
+    const provider = nvidiaProviders[0] || await getPrimaryNvidiaProvider(c.env)
     if (!provider) {
       return c.json({
         error: { message: 'NVIDIA provider is not configured; add a provider with id "nvidia" in the admin panel', type: 'configuration_error' },
       }, 500)
     }
 
-    if (!provider.enabled) {
+    if (!nvidiaProviders.length) {
       return c.json({
         error: { message: 'NVIDIA provider is disabled', type: 'provider_disabled' },
       }, 403)
@@ -507,8 +551,8 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
     const modelValidation = validateModel(provider, model)
     if (!modelValidation.ok) return modelValidation.response
 
-    const enabledKeys = provider.apiKeys.filter((key) => key.enabled)
-    if (enabledKeys.length === 0) {
+    const racingKeys = getEnabledRacingKeys(nvidiaProviders)
+    if (racingKeys.length === 0) {
       return c.json({
         error: { message: 'No enabled NVIDIA API keys are configured', type: 'configuration_error' },
       }, 500)
@@ -521,8 +565,8 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
 
     return raceNvidiaKeys({
       c,
-      provider,
-      enabledKeys,
+      fallbackProvider: provider,
+      racingKeys,
       forwardUrl,
       forwardBody: body,
       method: c.req.method,
@@ -536,7 +580,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
 }
 
 export async function handleModels(c: Context<{ Bindings: Env }>) {
-  const provider = await getNvidiaProvider(c.env)
+  const provider = await getPrimaryNvidiaProvider(c.env)
 
   if (!provider || !provider.enabled) {
     return c.json({ object: 'list', data: [] })

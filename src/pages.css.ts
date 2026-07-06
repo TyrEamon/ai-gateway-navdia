@@ -446,6 +446,33 @@ label {
   text-align: center;
 }
 
+.winner-log-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--c-text-light);
+  font-size: .68rem;
+}
+
+.race-participant {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.race-participant.winner {
+  border-color: rgba(37, 99, 235, .35);
+  background: #eff6ff;
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
 .sg {
   display: flex;
   gap: 12px;

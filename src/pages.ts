@@ -464,7 +464,7 @@ ${H('管理')}
 </footer>
 
 <script>
-window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-4'
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-5'
 window.copyText = function(t, el) {
   const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
   if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
@@ -506,8 +506,8 @@ window.loadWinnerLogs = async function() {
     const d = await r.json()
     const logs = d.success && d.data ? d.data : []
     if (!box) return
-    if (!logs.length) { box.innerHTML = '<p class="mu fs-i">暂无成功竞速日志</p>'; return }
-    box.innerHTML = logs.map(log => '<div class="winner-log-row"><div class="winner-log-main"><strong>' + (log.keyLabel || '-') + '</strong><span class="bd bd-info">#' + (log.keyFingerprint || '-') + '</span><span class="winner-model">' + (log.model || '-') + '</span></div><div class="winner-log-meta"><span><i class="fas fa-clock"></i> ' + new Date(log.timestamp).toLocaleString() + '</span><span><i class="fas fa-bolt"></i> ' + (log.latencyMs || 0) + 'ms</span><span><i class="fas fa-redo"></i> 第 ' + (log.attempt || 1) + ' 次</span><span><i class="fas fa-layer-group"></i> ' + (log.racedKeys || 0) + ' keys</span><span>HTTP ' + (log.statusCode || '-') + '</span></div></div>').join('')
+    if (window.renderWinnerLogs) window.renderWinnerLogs(logs)
+    else box.innerHTML = logs.length ? '<p class="mu fs-i">日志脚本加载中，请稍后刷新</p>' : '<p class="mu fs-i">暂无成功竞速日志</p>'
   } catch (e) {
     if (box) box.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 日志加载失败</div>'
   }
@@ -552,6 +552,19 @@ function escHtml(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]))
 }
 
+function renderParticipants(log) {
+  const participants = Array.isArray(log.participants) ? log.participants : []
+  if (!participants.length) return ''
+  return '<div class="winner-log-participants">本轮参赛：' + participants.map((item, idx) => {
+    const source = escHtml(item.providerName || item.providerId || '-')
+    const keyNo = Number.isFinite(item.keyIndex) ? Number(item.keyIndex) + 1 : '-'
+    const label = escHtml(item.keyLabel || '-')
+    const fingerprint = escHtml(item.keyFingerprint || '-')
+    const winner = fingerprint && fingerprint === log.keyFingerprint ? ' winner' : ''
+    return '<span class="race-participant' + winner + '">slot ' + (idx + 1) + ' ' + source + ' key ' + keyNo + ' ' + label + ' #' + fingerprint + '</span>'
+  }).join('') + '</div>'
+}
+
 function renderWinnerLogs(logs) {
   const box = document.getElementById('winnerLogs')
   if (!box) return
@@ -564,6 +577,7 @@ function renderWinnerLogs(logs) {
       '<div class="winner-log-main">' +
         '<strong>' + escHtml(log.keyLabel || '-') + '</strong>' +
         '<span class="bd bd-info">#' + escHtml(log.keyFingerprint || '-') + '</span>' +
+        '<span class="bd bd-on">' + escHtml(log.providerName || log.providerId || '-') + '</span>' +
         '<span class="winner-model">' + escHtml(log.model || '-') + '</span>' +
       '</div>' +
       '<div class="winner-log-meta">' +
@@ -572,11 +586,14 @@ function renderWinnerLogs(logs) {
         '<span><i class="fas fa-redo"></i> 第 ' + (log.attempt || 1) + ' 次</span>' +
         '<span><i class="fas fa-layer-group"></i> ' + (log.racedKeys || 0) + ' keys</span>' +
         '<span><i class="fas fa-hashtag"></i> slot ' + (Number.isFinite(log.keyIndex) ? log.keyIndex + 1 : '-') + '</span>' +
+        '<span><i class="fas fa-key"></i> source key ' + (Number.isFinite(log.sourceKeyIndex) ? log.sourceKeyIndex + 1 : '-') + '</span>' +
         '<span>HTTP ' + (log.statusCode || '-') + '</span>' +
       '</div>' +
+      renderParticipants(log) +
     '</div>'
   ).join('')
 }
+window.renderWinnerLogs = renderWinnerLogs
 
 async function loadWinnerLogs() {
   const box = document.getElementById('winnerLogs')
