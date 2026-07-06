@@ -1,6 +1,6 @@
 import { Context } from 'hono'
-import { getProvider, getProviders } from './storage'
-import type { ApiKeyEntry, Env, Provider, ProxyRequestBody } from './types'
+import { addRaceWinnerLog, getProvider, getProviders } from './storage'
+import type { ApiKeyEntry, Env, Provider, ProxyRequestBody, RaceWinnerLog } from './types'
 
 interface NvidiaRacingConfig {
   maxRacingKeys: number
@@ -152,6 +152,50 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err || 'Request failed')
 }
 
+function maskKey(key: string): string {
+  if (key.length <= 12) return key
+  return `${key.substring(0, 8)}****${key.substring(key.length - 4)}`
+}
+
+async function keyFingerprint(key: string): Promise<string> {
+  const data = new TextEncoder().encode(key)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  const bytes = [...new Uint8Array(hash)].slice(0, 4)
+  return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function createRaceWinnerLog(params: {
+  provider: Provider
+  model?: string
+  method: string
+  path: string
+  winnerKey: string
+  keyIndex: number
+  attempt: number
+  racedKeys: number
+  latencyMs: number
+  statusCode: number
+}): Promise<RaceWinnerLog> {
+  const timestamp = new Date().toISOString()
+  const reverseTime = String(9999999999999 - Date.now()).padStart(13, '0')
+  const id = `${reverseTime}:${crypto.randomUUID()}`
+  return {
+    id,
+    timestamp,
+    providerId: params.provider.id,
+    model: params.model,
+    method: params.method,
+    path: params.path,
+    keyIndex: params.keyIndex,
+    keyLabel: maskKey(params.winnerKey),
+    keyFingerprint: await keyFingerprint(params.winnerKey),
+    attempt: params.attempt,
+    racedKeys: params.racedKeys,
+    latencyMs: params.latencyMs,
+    statusCode: params.statusCode,
+  }
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, parentSignal: AbortSignal, timeoutMs: number): Promise<Response> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -266,6 +310,7 @@ async function raceNvidiaKeys(params: {
   const pending = new Set<Promise<SettledRacingTask>>()
   let lastFailure: { status: number; detail: string; hard: boolean } | null = null
   let winnerId: number | undefined
+  const startedAt = Date.now()
 
   for (let i = 0; i < selectedKeys.length; i++) {
     const controller = new AbortController()
@@ -309,14 +354,35 @@ async function raceNvidiaKeys(params: {
         clearTimeout(overallTimeoutId)
         abortLosers(tasks, winnerId)
         void Promise.allSettled([...pending])
+        const winnerKey = selectedKeys[settled.result.keyIndex]?.key || ''
+        const latencyMs = Date.now() - startedAt
+        const response = buildProxyResponse(settled.result.response)
+        const requestUrl = new URL(params.c.req.url)
+        const statusCode = response.status
+        const logPromise = createRaceWinnerLog({
+          provider: params.provider,
+          model: params.forwardBody.model,
+          method: params.method,
+          path: requestUrl.pathname,
+          winnerKey,
+          keyIndex: settled.result.keyIndex,
+          attempt: settled.result.attempt,
+          racedKeys: selectedKeys.length,
+          latencyMs,
+          statusCode,
+        })
+          .then((log) => addRaceWinnerLog(params.c.env, log))
+          .catch((err) => console.error('race winner log write failed:', errorMessage(err)))
+        params.c.executionCtx.waitUntil(logPromise)
         console.log(JSON.stringify({
           message: 'nvidia_race_winner',
           provider: params.provider.id,
           racedKeys: selectedKeys.length,
           keyIndex: settled.result.keyIndex,
           attempt: settled.result.attempt,
+          latencyMs,
         }))
-        return buildProxyResponse(settled.result.response)
+        return response
       }
 
       if (settled.result.type === 'failed') {

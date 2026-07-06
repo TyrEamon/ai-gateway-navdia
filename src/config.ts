@@ -28,6 +28,7 @@ export const KV_KEYS = {
   PROXY_KEYS: 'proxy:keys',
   SESSION_PREFIX: 'admin:session:',
   KEY_HEALTH_PREFIX: 'key:health:',
+  RACE_WINNER_LOG_PREFIX: 'race:winner:',
 } as const
 
 // 有效期选项（秒）

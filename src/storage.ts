@@ -1,5 +1,5 @@
 import { KV_KEYS } from './config'
-import type { Env, Provider, ProxyKey, Session } from './types'
+import type { Env, Provider, ProxyKey, RaceWinnerLog, Session } from './types'
 
 // ===== 提供商 CRUD =====
 
@@ -114,6 +114,29 @@ export async function validateProxyKey(env: Env, key: string): Promise<boolean> 
     }
     return true
   })
+}
+
+const RACE_WINNER_LOG_TTL_SECONDS = 7 * 24 * 60 * 60
+
+export async function addRaceWinnerLog(env: Env, log: RaceWinnerLog): Promise<void> {
+  await env.KV.put(KV_KEYS.RACE_WINNER_LOG_PREFIX + log.id, JSON.stringify(log), {
+    expirationTtl: RACE_WINNER_LOG_TTL_SECONDS,
+  })
+}
+
+export async function getRaceWinnerLogs(env: Env, limit = 50): Promise<RaceWinnerLog[]> {
+  const list = await env.KV.list({ prefix: KV_KEYS.RACE_WINNER_LOG_PREFIX, limit })
+  const logs = await Promise.all(
+    list.keys.map(async (key) => {
+      const data = await env.KV.get(key.name)
+      return data ? JSON.parse(data) as RaceWinnerLog : null
+    })
+  )
+
+  return logs
+    .filter((log): log is RaceWinnerLog => log !== null)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, limit)
 }
 
 // ===== 初始数据填充 =====

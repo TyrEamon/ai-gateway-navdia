@@ -1,5 +1,5 @@
 import { Context } from 'hono'
-import { getProviders, getProxyKeys } from './storage'
+import { getProviders, getProxyKeys, getRaceWinnerLogs } from './storage'
 import { NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS, SITE_CONFIG } from './config'
 import type { Env } from './types'
 import { CSS_CONTENT } from './pages.css'
@@ -263,6 +263,8 @@ async function l() {
 export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
   const providers = await getProviders(c.env)
   const proxyKeys = await getProxyKeys(c.env)
+  const winnerLogs = await getRaceWinnerLogs(c.env, 50)
+  const winnerLogsJson = JSON.stringify(winnerLogs).replace(/</g, '\\u003c')
 
   return c.html(`<!DOCTYPE html><html lang="zh-CN">
 ${H('管理')}
@@ -431,6 +433,15 @@ ${H('管理')}
       </div>
     </div>`).join('')}
 </div>
+
+<!-- 竞速胜出日志 -->
+<div class="card">
+  <div class="card-hd">
+    <h2><i class="fas fa-flag-checkered"></i>竞速胜出日志</h2>
+    <button class="btn btn-gh btn-xs" onclick="loadWinnerLogs()"><i class="fas fa-sync-alt"></i> 刷新</button>
+  </div>
+  <div id="winnerLogs" class="winner-log-list"></div>
+</div>
 </main>
 
 <div id="modal" class="modal-o hd" onclick="if(event.target===this)closeM()">
@@ -445,6 +456,57 @@ ${H('管理')}
 </footer>
 
 <script>
+let winnerLogs = ${winnerLogsJson}
+
+function fmtWinnerTime(ts) {
+  try { return new Date(ts).toLocaleString() } catch (e) { return ts || '-' }
+}
+
+function escHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]))
+}
+
+function renderWinnerLogs(logs) {
+  const box = document.getElementById('winnerLogs')
+  if (!box) return
+  if (!logs || logs.length === 0) {
+    box.innerHTML = '<p class="mu fs-i">暂无成功竞速日志</p>'
+    return
+  }
+  box.innerHTML = logs.map(log =>
+    '<div class="winner-log-row">' +
+      '<div class="winner-log-main">' +
+        '<strong>' + escHtml(log.keyLabel || '-') + '</strong>' +
+        '<span class="bd bd-info">#' + escHtml(log.keyFingerprint || '-') + '</span>' +
+        '<span class="winner-model">' + escHtml(log.model || '-') + '</span>' +
+      '</div>' +
+      '<div class="winner-log-meta">' +
+        '<span><i class="fas fa-clock"></i> ' + fmtWinnerTime(log.timestamp) + '</span>' +
+        '<span><i class="fas fa-bolt"></i> ' + (log.latencyMs || 0) + 'ms</span>' +
+        '<span><i class="fas fa-redo"></i> 第 ' + (log.attempt || 1) + ' 次</span>' +
+        '<span><i class="fas fa-layer-group"></i> ' + (log.racedKeys || 0) + ' keys</span>' +
+        '<span><i class="fas fa-hashtag"></i> slot ' + (Number.isFinite(log.keyIndex) ? log.keyIndex + 1 : '-') + '</span>' +
+        '<span>HTTP ' + (log.statusCode || '-') + '</span>' +
+      '</div>' +
+    '</div>'
+  ).join('')
+}
+
+async function loadWinnerLogs() {
+  const box = document.getElementById('winnerLogs')
+  if (box) box.innerHTML = '<span class="mu"><i class="fas fa-spinner fa-spin"></i> 加载中...</span>'
+  try {
+    const r = await fetch('/admin/api/race-winner-logs')
+    const d = await r.json()
+    winnerLogs = d.success && d.data ? d.data : []
+    renderWinnerLogs(winnerLogs)
+  } catch (e) {
+    if (box) box.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 日志加载失败</div>'
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() { renderWinnerLogs(winnerLogs) })
+
 // copy
 function copyText(t, el) {
   const i = el.tagName === 'I' ? el : el.querySelector('i')

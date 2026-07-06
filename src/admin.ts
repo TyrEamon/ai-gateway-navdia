@@ -9,6 +9,7 @@ import {
   addProxyKey,
   updateProxyKey,
   deleteProxyKey,
+  getRaceWinnerLogs,
 } from './storage'
 import { testModelConnection } from './proxy'
 import { PROXY_KEY_PREFIX, EXPIRY_OPTIONS, NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS } from './config'
@@ -62,6 +63,11 @@ export async function handleStatus(c: Context<{ Bindings: Env }>) {
       baseUrl: new URL(c.req.url).origin,
     },
   })
+}
+
+export async function handleGetRaceWinnerLogs(c: Context<{ Bindings: Env }>) {
+  const logs = await getRaceWinnerLogs(c.env, 50)
+  return c.json<ApiResponse>({ success: true, data: logs })
 }
 
 // ===== 提供商 CRUD =====

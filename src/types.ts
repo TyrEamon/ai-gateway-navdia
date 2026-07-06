@@ -40,6 +40,22 @@ export interface ProxyRequestBody {
   [key: string]: unknown
 }
 
+export interface RaceWinnerLog {
+  id: string
+  timestamp: string
+  providerId: string
+  model?: string
+  method: string
+  path: string
+  keyIndex: number
+  keyLabel: string
+  keyFingerprint: string
+  attempt: number
+  racedKeys: number
+  latencyMs: number
+  statusCode: number
+}
+
 export interface TestModelRequest {
   modelId: string
 }

@@ -396,6 +396,56 @@ label {
 
 .kv i.cp:hover { color: var(--c-primary); }
 
+.winner-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.winner-log-row {
+  padding: 8px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg-alt);
+}
+
+.winner-log-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.winner-log-main strong {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: .82rem;
+  color: var(--c-text-dark);
+  white-space: nowrap;
+}
+
+.winner-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-secondary);
+  font-size: .78rem;
+}
+
+.winner-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 5px;
+  color: var(--c-text-light);
+  font-size: .72rem;
+}
+
+.winner-log-meta i {
+  width: 12px;
+  text-align: center;
+}
+
 .sg {
   display: flex;
   gap: 12px;
