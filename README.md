@@ -89,6 +89,8 @@ https://你的-worker域名/admin
    - `minimaxai/minimax-m2.7`
    - `deepseek-ai/deepseek-v4-flash`
    - `deepseek-ai/deepseek-v4-pro`
+   - `z-ai/glm-5.1`
+   - `z-ai/glm-5.2`
 3. 生成本代理的转发 Key，也就是 `sk_cf_*`。
 4. 客户端使用 `Authorization: Bearer sk_cf_*` 请求 `/v1/chat/completions`。
 

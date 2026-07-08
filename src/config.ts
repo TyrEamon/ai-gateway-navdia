@@ -21,6 +21,8 @@ export const NVIDIA_DEFAULT_MODELS = [
   'minimaxai/minimax-m2.7',
   'deepseek-ai/deepseek-v4-flash',
   'deepseek-ai/deepseek-v4-pro',
+  'z-ai/glm-5.1',
+  'z-ai/glm-5.2',
 ] as const
 
 export const KV_KEYS = {
