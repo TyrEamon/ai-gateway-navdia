@@ -638,6 +638,7 @@ function renderWinnerLogs(logs) {
         '<span>HTTP ' + (log.statusCode || '-') + '</span>' +
       '</div>' +
       (log.errorDetail ? '<div class="winner-log-error">' + escHtml(log.errorDetail) + '</div>' : '') +
+      (log.responsePreview ? '<div class="winner-log-preview"><span>Preview:</span> ' + escHtml(log.responsePreview) + '</div>' : '') +
       renderParticipants(log) +
     '</div>'
   }).join('')

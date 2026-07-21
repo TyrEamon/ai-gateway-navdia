@@ -209,6 +209,7 @@ async function createRaceWinnerLog(params: {
   latencyMs: number
   statusCode: number
   errorDetail?: string
+  responsePreview?: string
 }): Promise<RaceWinnerLog> {
   const timestamp = new Date().toISOString()
   const reverseTime = String(9999999999999 - Date.now()).padStart(13, '0')
@@ -233,6 +234,47 @@ async function createRaceWinnerLog(params: {
     latencyMs: params.latencyMs,
     statusCode: params.statusCode,
     errorDetail: params.errorDetail?.substring(0, 500),
+    responsePreview: params.responsePreview?.substring(0, 1000),
+  }
+}
+
+async function readStreamPreview(stream: ReadableStream, maxBytes = 1000): Promise<string> {
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  try {
+    while (total < maxBytes) {
+      const { value, done } = await reader.read()
+      if (done || !value) break
+      const remaining = maxBytes - total
+      const chunk = value.length > remaining ? value.slice(0, remaining) : value
+      chunks.push(chunk)
+      total += chunk.length
+      if (value.length > remaining) break
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+
+  const data = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    data.set(chunk, offset)
+    offset += chunk.length
+  }
+
+  return new TextDecoder().decode(data)
+}
+
+function teeResponseForPreview(response: Response): { response: Response; preview: Promise<string> } {
+  if (!response.body) return { response, preview: Promise.resolve('') }
+
+  const [clientBody, previewBody] = response.body.tee()
+  const forwarded = new Response(clientBody, response)
+  return {
+    response: forwarded,
+    preview: readStreamPreview(previewBody).catch((err) => `preview failed: ${errorMessage(err)}`),
   }
 }
 
@@ -410,11 +452,16 @@ async function raceUpstreamKeys(params: {
         const winnerKey = winner?.key.key || ''
         const winnerProvider = winner?.provider || params.fallbackProvider
         const latencyMs = Date.now() - startedAt
-        const response = buildProxyResponse(successResult.response)
+        let response = buildProxyResponse(successResult.response)
+        const responsePreview = shouldWriteRaceLogs ? teeResponseForPreview(response) : null
+        if (responsePreview) response = responsePreview.response
         const statusCode = response.status
         if (shouldWriteRaceLogs) {
-          const logPromise = createRaceParticipants(selectedKeys)
-            .then((participants) => createRaceWinnerLog({
+          const logPromise = Promise.all([
+            createRaceParticipants(selectedKeys),
+            responsePreview?.preview || Promise.resolve(''),
+          ])
+            .then(([participants, preview]) => createRaceWinnerLog({
               outcome: 'success',
               provider: winnerProvider,
               model: params.forwardBody.model,
@@ -428,6 +475,7 @@ async function raceUpstreamKeys(params: {
               participants,
               latencyMs,
               statusCode,
+              responsePreview: preview,
             }))
             .then((log) => addRaceWinnerLog(params.c.env, log))
             .catch((err) => console.error('race log write failed:', errorMessage(err)))

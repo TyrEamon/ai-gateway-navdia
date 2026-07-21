@@ -458,6 +458,20 @@ label {
   word-break: break-word;
 }
 
+.winner-log-preview {
+  margin-top: 5px;
+  color: var(--c-text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: .68rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.winner-log-preview span {
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
 .winner-log-participants {
   display: flex;
   flex-wrap: wrap;

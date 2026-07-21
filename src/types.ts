@@ -67,6 +67,7 @@ export interface RaceWinnerLog {
   latencyMs: number
   statusCode: number
   errorDetail?: string
+  responsePreview?: string
 }
 
 export interface AppSettings {
