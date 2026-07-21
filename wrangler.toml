@@ -1,4 +1,4 @@
-name = "ai-gateway-navdia"
+name = "gateway-6"
 main = "src/index.ts"
 compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
