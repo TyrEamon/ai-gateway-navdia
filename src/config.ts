@@ -30,6 +30,7 @@ export const KV_KEYS = {
   PROXY_KEYS: 'proxy:keys',
   SESSION_PREFIX: 'admin:session:',
   KEY_HEALTH_PREFIX: 'key:health:',
+  APP_SETTINGS: 'app:settings',
   RACE_WINNER_LOG_PREFIX: 'race:winner:',
 } as const
 

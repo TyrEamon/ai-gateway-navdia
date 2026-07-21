@@ -1,8 +1,8 @@
 import { Context } from 'hono'
-import { addRaceWinnerLog, getProvider, getProviders } from './storage'
+import { addRaceWinnerLog, getAppSettings, getProviders } from './storage'
 import type { ApiKeyEntry, Env, Provider, ProxyRequestBody, RaceParticipant, RaceWinnerLog } from './types'
 
-interface NvidiaRacingConfig {
+interface UpstreamRacingConfig {
   maxRacingKeys: number
   perKeyRetries: number
   attemptTimeoutMs: number
@@ -32,10 +32,9 @@ type SettledRacingTask = {
   result: KeyWorkerResult
 }
 
-const NVIDIA_PROVIDER_ID = 'nvidia'
 const NVIDIA_DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 
-const NVIDIA_RACING_DEFAULTS: NvidiaRacingConfig = {
+const UPSTREAM_RACING_DEFAULTS: UpstreamRacingConfig = {
   // Cloudflare Workers allows about 6 simultaneous outgoing connections per invocation.
   maxRacingKeys: 6,
   perKeyRetries: 2,
@@ -50,12 +49,16 @@ function parseIntegerOption(value: string | undefined, fallback: number, min: nu
   return Math.min(max, Math.max(min, parsed))
 }
 
-function getNvidiaRacingConfig(env: Env): NvidiaRacingConfig {
+function firstConfiguredOption(primary: string | undefined, fallback: string | undefined): string | undefined {
+  return primary || fallback
+}
+
+function getUpstreamRacingConfig(env: Env): UpstreamRacingConfig {
   return {
-    maxRacingKeys: parseIntegerOption(env.NVIDIA_RACE_MAX_KEYS, NVIDIA_RACING_DEFAULTS.maxRacingKeys, 1, 6),
-    perKeyRetries: parseIntegerOption(env.NVIDIA_RACE_PER_KEY_RETRIES, NVIDIA_RACING_DEFAULTS.perKeyRetries, 1, 5),
-    attemptTimeoutMs: parseIntegerOption(env.NVIDIA_RACE_ATTEMPT_TIMEOUT_MS, NVIDIA_RACING_DEFAULTS.attemptTimeoutMs, 1000, 30000),
-    overallTimeoutMs: parseIntegerOption(env.NVIDIA_RACE_OVERALL_TIMEOUT_MS, NVIDIA_RACING_DEFAULTS.overallTimeoutMs, 3000, 120000),
+    maxRacingKeys: parseIntegerOption(firstConfiguredOption(env.UPSTREAM_RACE_MAX_KEYS, env.NVIDIA_RACE_MAX_KEYS), UPSTREAM_RACING_DEFAULTS.maxRacingKeys, 1, 6),
+    perKeyRetries: parseIntegerOption(firstConfiguredOption(env.UPSTREAM_RACE_PER_KEY_RETRIES, env.NVIDIA_RACE_PER_KEY_RETRIES), UPSTREAM_RACING_DEFAULTS.perKeyRetries, 1, 5),
+    attemptTimeoutMs: parseIntegerOption(firstConfiguredOption(env.UPSTREAM_RACE_ATTEMPT_TIMEOUT_MS, env.NVIDIA_RACE_ATTEMPT_TIMEOUT_MS), UPSTREAM_RACING_DEFAULTS.attemptTimeoutMs, 1000, 30000),
+    overallTimeoutMs: parseIntegerOption(firstConfiguredOption(env.UPSTREAM_RACE_OVERALL_TIMEOUT_MS, env.NVIDIA_RACE_OVERALL_TIMEOUT_MS), UPSTREAM_RACING_DEFAULTS.overallTimeoutMs, 3000, 120000),
   }
 }
 
@@ -81,22 +84,15 @@ function shuffled<T>(items: T[]): T[] {
   return copy
 }
 
-function isNvidiaProvider(provider: Provider): boolean {
-  const text = `${provider.id} ${provider.name} ${provider.baseUrl}`.toLowerCase()
-  return text.includes('nvidia') || text.includes('integrate.api.nvidia.com')
+async function getEnabledProviders(env: Env): Promise<Provider[]> {
+  const providers = await getProviders(env)
+  return providers.filter((provider) => provider.enabled)
 }
 
-async function getPrimaryNvidiaProvider(env: Env): Promise<Provider | null> {
-  const configured = await getProvider(env, NVIDIA_PROVIDER_ID)
-  if (configured) return configured
-
-  const providers = await getProviders(env)
-  return providers.find(isNvidiaProvider) || null
-}
-
-async function getNvidiaProviders(env: Env): Promise<Provider[]> {
-  const providers = await getProviders(env)
-  return providers.filter((provider) => provider.enabled && isNvidiaProvider(provider))
+function providerAllowsModel(provider: Provider, model: string): boolean {
+  if (provider.models.length === 0) return true
+  const modelConfig = provider.models.find((item) => item.id === model)
+  return !modelConfig || modelConfig.enabled
 }
 
 function getEnabledRacingKeys(providers: Provider[]): RacingKey[] {
@@ -126,13 +122,16 @@ function buildProxyResponse(response: Response): Response {
   })
 }
 
-function isTransientNvidiaStatus(status: number): boolean {
+function isTransientUpstreamStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status === 499 || status >= 500
 }
 
-function looksTransientNvidiaError(detail: string): boolean {
+function looksTransientUpstreamError(detail: string): boolean {
   const lower = detail.toLowerCase()
   return [
+    'resourceexhausted',
+    'resource exhausted',
+    'worker local total request limit reached',
     'rate limit',
     'rate_limit',
     'too many requests',
@@ -185,40 +184,55 @@ async function keyFingerprint(key: string): Promise<string> {
   return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+async function createRaceParticipants(racingKeys: RacingKey[]): Promise<RaceParticipant[]> {
+  return Promise.all(racingKeys.map(async (entry) => ({
+    providerId: entry.provider.id,
+    providerName: entry.provider.name,
+    keyIndex: entry.sourceKeyIndex,
+    keyLabel: maskKey(entry.key.key),
+    keyFingerprint: await keyFingerprint(entry.key.key),
+  })))
+}
+
 async function createRaceWinnerLog(params: {
+  outcome: 'success' | 'failure'
   provider: Provider
   model?: string
   method: string
   path: string
-  winnerKey: string
-  keyIndex: number
-  sourceKeyIndex: number
+  winnerKey?: string
+  keyIndex?: number
+  sourceKeyIndex?: number
   attempt: number
   racedKeys: number
   participants: RaceParticipant[]
   latencyMs: number
   statusCode: number
+  errorDetail?: string
 }): Promise<RaceWinnerLog> {
   const timestamp = new Date().toISOString()
   const reverseTime = String(9999999999999 - Date.now()).padStart(13, '0')
   const id = `${reverseTime}:${crypto.randomUUID()}`
+  const winnerKey = params.winnerKey || ''
   return {
     id,
     timestamp,
+    outcome: params.outcome,
     providerId: params.provider.id,
     providerName: params.provider.name,
     model: params.model,
     method: params.method,
     path: params.path,
-    keyIndex: params.keyIndex,
-    sourceKeyIndex: params.sourceKeyIndex,
-    keyLabel: maskKey(params.winnerKey),
-    keyFingerprint: await keyFingerprint(params.winnerKey),
+    keyIndex: params.keyIndex ?? -1,
+    sourceKeyIndex: params.sourceKeyIndex ?? -1,
+    keyLabel: winnerKey ? maskKey(winnerKey) : 'all-failed',
+    keyFingerprint: winnerKey ? await keyFingerprint(winnerKey) : '',
     attempt: params.attempt,
     racedKeys: params.racedKeys,
     participants: params.participants,
     latencyMs: params.latencyMs,
     statusCode: params.statusCode,
+    errorDetail: params.errorDetail?.substring(0, 500),
   }
 }
 
@@ -250,11 +264,11 @@ async function runKeyWorker(params: {
   forwardUrl: string
   method: string
   body: ProxyRequestBody
-  config: NvidiaRacingConfig
+  config: UpstreamRacingConfig
   signal: AbortSignal
 }): Promise<KeyWorkerResult> {
   let lastStatus = 502
-  let lastDetail = 'NVIDIA request failed'
+  let lastDetail = 'Upstream request failed'
 
   for (let attempt = 1; attempt <= params.config.perKeyRetries; attempt++) {
     if (params.signal.aborted) {
@@ -274,7 +288,7 @@ async function runKeyWorker(params: {
 
       lastStatus = response.status
 
-      if (isTransientNvidiaStatus(response.status)) {
+      if (isTransientUpstreamStatus(response.status)) {
         lastDetail = `HTTP ${response.status}`
         await cancelResponseBody(response)
         continue
@@ -283,8 +297,8 @@ async function runKeyWorker(params: {
       const detail = await readErrorSnippet(response)
       lastDetail = detail || `HTTP ${response.status}`
 
-      // Some NVIDIA transient failures arrive as non-429/5xx JSON errors.
-      if (response.status === 400 && looksTransientNvidiaError(lastDetail)) {
+      // Some upstream transient failures arrive as non-429/5xx JSON errors.
+      if (response.status === 400 && looksTransientUpstreamError(lastDetail)) {
         continue
       }
 
@@ -321,16 +335,24 @@ function abortLosers(tasks: RacingTask[], winnerId?: number): void {
   }
 }
 
-async function raceNvidiaKeys(params: {
+function buildCandidateForwardUrl(candidate: RacingKey, requestUrl: URL): string {
+  const subPath = requestUrl.pathname.replace(/^\/v1\/?/, '') || 'chat/completions'
+  const cleanBase = (candidate.provider.baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
+  return `${cleanBase}/${subPath}${requestUrl.search}`
+}
+
+async function raceUpstreamKeys(params: {
   c: Context<{ Bindings: Env }>
   fallbackProvider: Provider
   racingKeys: RacingKey[]
-  forwardUrl: string
   forwardBody: ProxyRequestBody
   method: string
 }): Promise<Response> {
-  const config = getNvidiaRacingConfig(params.c.env)
+  const config = getUpstreamRacingConfig(params.c.env)
+  const settings = await getAppSettings(params.c.env)
+  const shouldWriteRaceLogs = settings.debugLoggingEnabled
   const selectedKeys = shuffled(params.racingKeys).slice(0, Math.min(params.racingKeys.length, config.maxRacingKeys))
+  const requestUrl = new URL(params.c.req.url)
 
   const tasks: RacingTask[] = []
   const pending = new Set<Promise<SettledRacingTask>>()
@@ -343,7 +365,7 @@ async function raceNvidiaKeys(params: {
     const promise = runKeyWorker({
       keyIndex: i,
       apiKey: selectedKeys[i].key.key,
-      forwardUrl: params.forwardUrl,
+      forwardUrl: buildCandidateForwardUrl(selectedKeys[i], requestUrl),
       method: params.method,
       body: params.forwardBody,
       config,
@@ -389,42 +411,38 @@ async function raceNvidiaKeys(params: {
         const winnerProvider = winner?.provider || params.fallbackProvider
         const latencyMs = Date.now() - startedAt
         const response = buildProxyResponse(successResult.response)
-        const requestUrl = new URL(params.c.req.url)
         const statusCode = response.status
-        const logPromise = Promise.all(selectedKeys.map(async (entry) => ({
-          providerId: entry.provider.id,
-          providerName: entry.provider.name,
-          keyIndex: entry.sourceKeyIndex,
-          keyLabel: maskKey(entry.key.key),
-          keyFingerprint: await keyFingerprint(entry.key.key),
-        })))
-          .then((participants) => createRaceWinnerLog({
-            provider: winnerProvider,
-            model: params.forwardBody.model,
-            method: params.method,
-            path: requestUrl.pathname,
-            winnerKey,
+        if (shouldWriteRaceLogs) {
+          const logPromise = createRaceParticipants(selectedKeys)
+            .then((participants) => createRaceWinnerLog({
+              outcome: 'success',
+              provider: winnerProvider,
+              model: params.forwardBody.model,
+              method: params.method,
+              path: requestUrl.pathname,
+              winnerKey,
+              keyIndex: winnerSlot,
+              sourceKeyIndex,
+              attempt: winnerAttempt,
+              racedKeys: selectedKeys.length,
+              participants,
+              latencyMs,
+              statusCode,
+            }))
+            .then((log) => addRaceWinnerLog(params.c.env, log))
+            .catch((err) => console.error('race log write failed:', errorMessage(err)))
+          params.c.executionCtx.waitUntil(logPromise)
+          console.log(JSON.stringify({
+            message: 'upstream_race_winner',
+            provider: winnerProvider.id,
+            providerName: winnerProvider.name,
+            racedKeys: selectedKeys.length,
             keyIndex: winnerSlot,
             sourceKeyIndex,
             attempt: winnerAttempt,
-            racedKeys: selectedKeys.length,
-            participants,
             latencyMs,
-            statusCode,
           }))
-          .then((log) => addRaceWinnerLog(params.c.env, log))
-          .catch((err) => console.error('race winner log write failed:', errorMessage(err)))
-        params.c.executionCtx.waitUntil(logPromise)
-        console.log(JSON.stringify({
-          message: 'nvidia_race_winner',
-          provider: winnerProvider.id,
-          providerName: winnerProvider.name,
-          racedKeys: selectedKeys.length,
-          keyIndex: winnerSlot,
-          sourceKeyIndex,
-          attempt: winnerAttempt,
-          latencyMs,
-        }))
+        }
         return response
       }
 
@@ -442,35 +460,47 @@ async function raceNvidiaKeys(params: {
   }
 
   const status = lastFailure?.status || 504
-  const detail = lastFailure?.detail || 'NVIDIA racing request timed out or all attempts were canceled'
+  const detail = lastFailure?.detail || 'Upstream racing request timed out or all attempts were canceled'
+  if (shouldWriteRaceLogs) {
+    const latencyMs = Date.now() - startedAt
+    const logPromise = createRaceParticipants(selectedKeys)
+      .then((participants) => createRaceWinnerLog({
+        outcome: 'failure',
+        provider: params.fallbackProvider,
+        model: params.forwardBody.model,
+        method: params.method,
+        path: requestUrl.pathname,
+        attempt: config.perKeyRetries,
+        racedKeys: selectedKeys.length,
+        participants,
+        latencyMs,
+        statusCode: status,
+        errorDetail: detail,
+      }))
+      .then((log) => addRaceWinnerLog(params.c.env, log))
+      .catch((err) => console.error('race log write failed:', errorMessage(err)))
+    params.c.executionCtx.waitUntil(logPromise)
+    console.log(JSON.stringify({
+      message: 'upstream_race_failed',
+      provider: params.fallbackProvider.id,
+      providerName: params.fallbackProvider.name,
+      racedKeys: selectedKeys.length,
+      perKeyRetries: config.perKeyRetries,
+      latencyMs,
+      status,
+      detail: detail.substring(0, 500),
+    }))
+  }
   return params.c.json({
     error: {
-      message: `All NVIDIA key racing attempts failed; last HTTP status: ${status}`,
-      type: 'nvidia_race_exhausted',
+      message: `All upstream racing attempts failed; last HTTP status: ${status}`,
+      type: 'upstream_race_exhausted',
       detail: detail.substring(0, 500),
       raced_keys: selectedKeys.length,
       per_key_retries: config.perKeyRetries,
       hard_error: lastFailure?.hard || false,
     },
   }, status as Parameters<typeof params.c.json>[1])
-}
-
-function validateModel(provider: Provider, model: string): { ok: true } | { ok: false; response: Response } {
-  if (provider.models.length === 0) return { ok: true }
-
-  const modelConfig = provider.models.find((m) => m.id === model)
-  if (!modelConfig) return { ok: true }
-
-  if (!modelConfig.enabled) {
-    return {
-      ok: false,
-      response: Response.json({
-        error: { message: `Model "${model}" is disabled`, type: 'model_disabled' },
-      }, { status: 403 }),
-    }
-  }
-
-  return { ok: true }
 }
 
 export async function testModelConnection(
@@ -481,7 +511,7 @@ export async function testModelConnection(
 ): Promise<{ success: boolean; message: string; statusCode?: number }> {
   const cleanBase = (baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
   let lastStatus: number | undefined
-  let lastMessage = 'NVIDIA connection failed'
+  let lastMessage = 'Upstream connection failed'
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -497,12 +527,12 @@ export async function testModelConnection(
       })
 
       if (response.ok) {
-        return { success: true, message: 'NVIDIA connection succeeded', statusCode: response.status }
+          return { success: true, message: 'Upstream connection succeeded', statusCode: response.status }
       }
 
       lastStatus = response.status
 
-      if (isTransientNvidiaStatus(response.status)) {
+      if (isTransientUpstreamStatus(response.status)) {
         lastMessage = `HTTP ${response.status}`
         await cancelResponseBody(response)
         continue
@@ -511,14 +541,14 @@ export async function testModelConnection(
       const errorBody = await readErrorSnippet(response, 200)
       lastMessage = `HTTP ${response.status}: ${errorBody}`
 
-      if (response.status === 400 && looksTransientNvidiaError(errorBody)) {
+      if (response.status === 400 && looksTransientUpstreamError(errorBody)) {
         continue
       }
 
       return { success: false, message: lastMessage, statusCode: response.status }
     } catch (err) {
       const error = err as Error
-      lastMessage = `NVIDIA connection failed: ${error.message?.substring(0, 200) || 'unknown error'}`
+      lastMessage = `Upstream connection failed: ${error.message?.substring(0, 200) || 'unknown error'}`
     }
   }
 
@@ -534,69 +564,65 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
       return c.json({ error: { message: 'Missing model parameter', type: 'invalid_request_error' } }, 400)
     }
 
-    const nvidiaProviders = await getNvidiaProviders(c.env)
-    const provider = nvidiaProviders[0] || await getPrimaryNvidiaProvider(c.env)
-    if (!provider) {
+    const enabledProviders = await getEnabledProviders(c.env)
+    if (!enabledProviders.length) {
       return c.json({
-        error: { message: 'NVIDIA provider is not configured; add a provider with id "nvidia" in the admin panel', type: 'configuration_error' },
+        error: { message: 'No enabled upstream providers are configured', type: 'configuration_error' },
       }, 500)
     }
 
-    if (!nvidiaProviders.length) {
-      return c.json({
-        error: { message: 'NVIDIA provider is disabled', type: 'provider_disabled' },
-      }, 403)
+    const racingProviders = enabledProviders.filter((provider) => providerAllowsModel(provider, model))
+    if (!racingProviders.length) {
+      return c.json({ error: { message: `Model "${model}" is disabled`, type: 'model_disabled' } }, 403)
     }
 
-    const modelValidation = validateModel(provider, model)
-    if (!modelValidation.ok) return modelValidation.response
-
-    const racingKeys = getEnabledRacingKeys(nvidiaProviders)
+    const provider = racingProviders[0]
+    const racingKeys = getEnabledRacingKeys(racingProviders)
     if (racingKeys.length === 0) {
       return c.json({
-        error: { message: 'No enabled NVIDIA API keys are configured', type: 'configuration_error' },
+        error: { message: 'No enabled upstream API keys are configured', type: 'configuration_error' },
       }, 500)
     }
 
-    const url = new URL(c.req.url)
-    const subPath = url.pathname.replace(/^\/v1\//, '') || 'chat/completions'
-    const cleanBase = (provider.baseUrl || NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, '')
-    const forwardUrl = `${cleanBase}/${subPath}${url.search}`
-
-    return raceNvidiaKeys({
+    return raceUpstreamKeys({
       c,
       fallbackProvider: provider,
       racingKeys,
-      forwardUrl,
       forwardBody: body,
       method: c.req.method,
     })
   } catch (err) {
     const error = err as Error
     return c.json({
-      error: { message: error.message || 'NVIDIA proxy internal error', type: 'server_error' },
+      error: { message: error.message || 'Upstream proxy internal error', type: 'server_error' },
     }, 500)
   }
 }
 
 export async function handleModels(c: Context<{ Bindings: Env }>) {
-  const provider = await getPrimaryNvidiaProvider(c.env)
+  const providers = await getEnabledProviders(c.env)
 
-  if (!provider || !provider.enabled) {
+  if (!providers.length) {
     return c.json({ object: 'list', data: [] })
   }
 
-  return c.json({
-    object: 'list',
-    data: provider.models
-      .filter((model) => model.enabled)
-      .map((model) => ({
+  const models = new Map<string, { id: string; provider: string; provider_name: string; object: string; created: number; owned_by: string }>()
+  for (const provider of providers) {
+    for (const model of provider.models) {
+      if (!model.enabled || models.has(model.id)) continue
+      models.set(model.id, {
         id: model.id,
         provider: provider.id,
         provider_name: provider.name,
         object: 'model',
         created: Math.floor(Date.now() / 1000),
-        owned_by: 'nvidia',
-      })),
+        owned_by: provider.id,
+      })
+    }
+  }
+
+  return c.json({
+    object: 'list',
+    data: [...models.values()],
   })
 }

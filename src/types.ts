@@ -51,6 +51,7 @@ export interface RaceParticipant {
 export interface RaceWinnerLog {
   id: string
   timestamp: string
+  outcome?: 'success' | 'failure'
   providerId: string
   providerName?: string
   model?: string
@@ -65,6 +66,11 @@ export interface RaceWinnerLog {
   participants?: RaceParticipant[]
   latencyMs: number
   statusCode: number
+  errorDetail?: string
+}
+
+export interface AppSettings {
+  debugLoggingEnabled: boolean
 }
 
 export interface TestModelRequest {
@@ -102,6 +108,10 @@ export interface CreateProxyKeyRequest {
   expiresIn?: string // '30d' | '90d' | '180d' | '1y' | 'forever'
 }
 
+export interface UpdateAppSettingsRequest {
+  debugLoggingEnabled?: boolean
+}
+
 export interface DataBackup {
   version: 1
   exportedAt: string
@@ -123,4 +133,8 @@ export interface Env {
   NVIDIA_RACE_PER_KEY_RETRIES?: string
   NVIDIA_RACE_ATTEMPT_TIMEOUT_MS?: string
   NVIDIA_RACE_OVERALL_TIMEOUT_MS?: string
+  UPSTREAM_RACE_MAX_KEYS?: string
+  UPSTREAM_RACE_PER_KEY_RETRIES?: string
+  UPSTREAM_RACE_ATTEMPT_TIMEOUT_MS?: string
+  UPSTREAM_RACE_OVERALL_TIMEOUT_MS?: string
 }

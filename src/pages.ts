@@ -1,5 +1,5 @@
 import { Context } from 'hono'
-import { getProviders, getProxyKeys, getRaceWinnerLogs } from './storage'
+import { getAppSettings, getProviders, getProxyKeys, getRaceWinnerLogs } from './storage'
 import { NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_MODELS, SITE_CONFIG } from './config'
 import type { Env } from './types'
 import { CSS_CONTENT } from './pages.css'
@@ -271,7 +271,9 @@ async function l() {
 export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
   const providers = await getProviders(c.env)
   const proxyKeys = await getProxyKeys(c.env)
-  const winnerLogs = await getRaceWinnerLogs(c.env, 50)
+  const appSettings = await getAppSettings(c.env)
+  const winnerLogs = await getRaceWinnerLogs(c.env, 20)
+  const appSettingsJson = JSON.stringify(appSettings).replace(/</g, '\\u003c')
   const winnerLogsJson = JSON.stringify(winnerLogs).replace(/</g, '\\u003c')
 
   return c.html(`<!DOCTYPE html><html lang="zh-CN">
@@ -446,7 +448,14 @@ ${H('管理')}
 <div class="card">
   <div class="card-hd">
     <h2><i class="fas fa-flag-checkered"></i>竞速胜出日志</h2>
-    <button class="btn btn-gh btn-xs" onclick="loadWinnerLogs()"><i class="fas fa-sync-alt"></i> 刷新</button>
+    <div class="fc gap-8">
+      <label class="tg" title="Debug logging">
+        <input type="checkbox" id="debugLoggingToggle" ${appSettings.debugLoggingEnabled ? 'checked' : ''} onchange="toggleDebugLogging(this.checked)">
+        <span class="sl"></span>
+      </label>
+      <span class="mu fs-77">Debug</span>
+      <button class="btn btn-gh btn-xs" onclick="loadWinnerLogs()"><i class="fas fa-sync-alt"></i> 刷新</button>
+    </div>
   </div>
   <div id="winnerLogs" class="winner-log-list"></div>
 </div>
@@ -477,7 +486,8 @@ ${H('管理')}
 </footer>
 
 <script>
-window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260706-6'
+window.__NVIDIA_GATEWAY_ADMIN_BUILD = 'admin-handlers-20260721-debug-logs'
+let appSettings = ${appSettingsJson}
 window.copyText = function(t, el) {
   const i = el && el.tagName === 'I' ? el : el && el.querySelector ? el.querySelector('i') : null
   if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {})
@@ -520,9 +530,29 @@ window.loadWinnerLogs = async function() {
     const logs = d.success && d.data ? d.data : []
     if (!box) return
     if (window.renderWinnerLogs) window.renderWinnerLogs(logs)
-    else box.innerHTML = logs.length ? '<p class="mu fs-i">日志脚本加载中，请稍后刷新</p>' : '<p class="mu fs-i">暂无成功竞速日志</p>'
+    else box.innerHTML = logs.length ? '<p class="mu fs-i">日志脚本加载中，请稍后刷新</p>' : '<p class="mu fs-i">暂无 Debug 竞速日志</p>'
   } catch (e) {
     if (box) box.innerHTML = '<div class="al al-e"><i class="fas fa-times-circle"></i> 日志加载失败</div>'
+  }
+}
+window.toggleDebugLogging = async function(enabled) {
+  const toggle = document.getElementById('debugLoggingToggle')
+  if (toggle) toggle.disabled = true
+  try {
+    const r = await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ debugLoggingEnabled: enabled })
+    })
+    const d = await r.json()
+    if (!d.success) throw new Error(d.message || 'Save failed')
+    appSettings = d.data || { debugLoggingEnabled: enabled }
+    if (window.aM) window.aM(enabled ? 'Debug 日志已开启' : 'Debug 日志已关闭', 'success')
+  } catch (e) {
+    if (toggle) toggle.checked = !enabled
+    alert('Debug 日志设置保存失败')
+  } finally {
+    if (toggle) toggle.disabled = false
   }
 }
 window.testMdl = async function(id, mid, idx) {
@@ -582,14 +612,19 @@ function renderWinnerLogs(logs) {
   const box = document.getElementById('winnerLogs')
   if (!box) return
   if (!logs || logs.length === 0) {
-    box.innerHTML = '<p class="mu fs-i">暂无成功竞速日志</p>'
+    box.innerHTML = '<p class="mu fs-i">暂无 Debug 竞速日志</p>'
     return
   }
-  box.innerHTML = logs.map(log =>
-    '<div class="winner-log-row">' +
+  box.innerHTML = logs.map(log => {
+    const failed = log.outcome === 'failure'
+    const rowClass = failed ? 'winner-log-row failure' : 'winner-log-row'
+    const label = failed ? 'ALL FAILED' : (log.keyLabel || '-')
+    const statusBadge = failed ? '<span class="bd bd-off">failure</span>' : '<span class="bd bd-on">success</span>'
+    return '<div class="' + rowClass + '">' +
       '<div class="winner-log-main">' +
-        '<strong>' + escHtml(log.keyLabel || '-') + '</strong>' +
-        '<span class="bd bd-info">#' + escHtml(log.keyFingerprint || '-') + '</span>' +
+        '<strong>' + escHtml(label) + '</strong>' +
+        (log.keyFingerprint ? '<span class="bd bd-info">#' + escHtml(log.keyFingerprint) + '</span>' : '') +
+        statusBadge +
         '<span class="bd bd-on">' + escHtml(log.providerName || log.providerId || '-') + '</span>' +
         '<span class="winner-model">' + escHtml(log.model || '-') + '</span>' +
       '</div>' +
@@ -602,9 +637,10 @@ function renderWinnerLogs(logs) {
         '<span><i class="fas fa-key"></i> source key ' + (Number.isFinite(log.sourceKeyIndex) ? log.sourceKeyIndex + 1 : '-') + '</span>' +
         '<span>HTTP ' + (log.statusCode || '-') + '</span>' +
       '</div>' +
+      (log.errorDetail ? '<div class="winner-log-error">' + escHtml(log.errorDetail) + '</div>' : '') +
       renderParticipants(log) +
     '</div>'
-  ).join('')
+  }).join('')
 }
 window.renderWinnerLogs = renderWinnerLogs
 

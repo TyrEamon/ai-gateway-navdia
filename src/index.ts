@@ -6,6 +6,8 @@ import { adminAuthMiddleware, proxyKeyAuthMiddleware, handleLogin, handleLogout 
 import { handleProxy, handleModels } from './proxy'
 import {
   handleStatus,
+  handleGetSettings,
+  handleUpdateSettings,
   handleGetRaceWinnerLogs,
   handleExportData,
   handleImportData,
@@ -57,6 +59,8 @@ app.use('/admin/*', adminAuthMiddleware)
 app.get('/admin', async (c) => renderAdminPage(c))
 
 app.get('/admin/api/status', handleStatus)
+app.get('/admin/api/settings', handleGetSettings)
+app.put('/admin/api/settings', handleUpdateSettings)
 app.get('/admin/api/race-winner-logs', handleGetRaceWinnerLogs)
 app.get('/admin/api/export', handleExportData)
 app.post('/admin/api/import', handleImportData)

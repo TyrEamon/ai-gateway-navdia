@@ -1,5 +1,5 @@
 import { KV_KEYS } from './config'
-import type { Env, Provider, ProxyKey, RaceWinnerLog, Session } from './types'
+import type { AppSettings, Env, Provider, ProxyKey, RaceWinnerLog, Session } from './types'
 
 // ===== 提供商 CRUD =====
 
@@ -124,7 +124,32 @@ export async function validateProxyKey(env: Env, key: string): Promise<boolean> 
   })
 }
 
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  debugLoggingEnabled: false,
+}
+
+export async function getAppSettings(env: Env): Promise<AppSettings> {
+  const data = await env.KV.get(KV_KEYS.APP_SETTINGS)
+  if (!data) return DEFAULT_APP_SETTINGS
+
+  try {
+    const parsed = JSON.parse(data) as Partial<AppSettings>
+    return {
+      debugLoggingEnabled: parsed.debugLoggingEnabled === true,
+    }
+  } catch {
+    return DEFAULT_APP_SETTINGS
+  }
+}
+
+export async function setAppSettings(env: Env, settings: AppSettings): Promise<void> {
+  await env.KV.put(KV_KEYS.APP_SETTINGS, JSON.stringify({
+    debugLoggingEnabled: settings.debugLoggingEnabled === true,
+  }))
+}
+
 const RACE_WINNER_LOG_TTL_SECONDS = 7 * 24 * 60 * 60
+const RACE_WINNER_LOG_LIMIT = 20
 
 export async function addRaceWinnerLog(env: Env, log: RaceWinnerLog): Promise<void> {
   await env.KV.put(KV_KEYS.RACE_WINNER_LOG_PREFIX + log.id, JSON.stringify(log), {
@@ -132,8 +157,9 @@ export async function addRaceWinnerLog(env: Env, log: RaceWinnerLog): Promise<vo
   })
 }
 
-export async function getRaceWinnerLogs(env: Env, limit = 50): Promise<RaceWinnerLog[]> {
-  const list = await env.KV.list({ prefix: KV_KEYS.RACE_WINNER_LOG_PREFIX, limit })
+export async function getRaceWinnerLogs(env: Env, limit = RACE_WINNER_LOG_LIMIT): Promise<RaceWinnerLog[]> {
+  const safeLimit = Math.max(1, Math.min(limit, RACE_WINNER_LOG_LIMIT))
+  const list = await env.KV.list({ prefix: KV_KEYS.RACE_WINNER_LOG_PREFIX, limit: safeLimit })
   const logs = await Promise.all(
     list.keys.map(async (key) => {
       const data = await env.KV.get(key.name)
@@ -144,7 +170,7 @@ export async function getRaceWinnerLogs(env: Env, limit = 50): Promise<RaceWinne
   return logs
     .filter((log): log is RaceWinnerLog => log !== null)
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, limit)
+    .slice(0, safeLimit)
 }
 
 // ===== 初始数据填充 =====

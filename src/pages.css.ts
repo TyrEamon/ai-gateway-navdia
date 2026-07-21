@@ -409,6 +409,11 @@ label {
   background: var(--c-bg-alt);
 }
 
+.winner-log-row.failure {
+  border-color: rgba(220, 38, 38, .22);
+  background: #fef2f2;
+}
+
 .winner-log-main {
   display: flex;
   align-items: center;
@@ -444,6 +449,13 @@ label {
 .winner-log-meta i {
   width: 12px;
   text-align: center;
+}
+
+.winner-log-error {
+  margin-top: 5px;
+  color: var(--c-danger);
+  font-size: .72rem;
+  word-break: break-word;
 }
 
 .winner-log-participants {

@@ -10,6 +10,8 @@ import {
   updateProxyKey,
   deleteProxyKey,
   getRaceWinnerLogs,
+  getAppSettings,
+  setAppSettings,
   replaceProviders,
   replaceProxyKeys,
 } from './storage'
@@ -26,6 +28,7 @@ import type {
   TestApiKeyRequest,
   DataBackup,
   ProxyKey,
+  UpdateAppSettingsRequest,
 } from './types'
 
 // ===== 系统状态 =====
@@ -95,8 +98,30 @@ export async function handleStatus(c: Context<{ Bindings: Env }>) {
 }
 
 export async function handleGetRaceWinnerLogs(c: Context<{ Bindings: Env }>) {
-  const logs = await getRaceWinnerLogs(c.env, 50)
+  const logs = await getRaceWinnerLogs(c.env, 20)
   return c.json<ApiResponse>({ success: true, data: logs })
+}
+
+export async function handleGetSettings(c: Context<{ Bindings: Env }>) {
+  const settings = await getAppSettings(c.env)
+  return c.json<ApiResponse>({ success: true, data: settings })
+}
+
+export async function handleUpdateSettings(c: Context<{ Bindings: Env }>) {
+  let body: UpdateAppSettingsRequest
+  try {
+    body = await c.req.json<UpdateAppSettingsRequest>()
+  } catch {
+    return c.json<ApiResponse>({ success: false, message: 'Invalid JSON' }, 400)
+  }
+
+  const settings = await getAppSettings(c.env)
+  if (body.debugLoggingEnabled !== undefined) {
+    settings.debugLoggingEnabled = body.debugLoggingEnabled === true
+  }
+
+  await setAppSettings(c.env, settings)
+  return c.json<ApiResponse>({ success: true, data: settings })
 }
 
 export async function handleExportData(c: Context<{ Bindings: Env }>) {
