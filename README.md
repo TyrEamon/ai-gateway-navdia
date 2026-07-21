@@ -61,76 +61,53 @@ API Key：gateway-1 后台生成的 sk_cf_*
 ```mermaid
 flowchart TD
     U["客户端请求 /v1/chat/completions"]
-    AUTH["Controller 校验 sk_cf_*"]
-    CK["读取 Controller KV Providers"]
-    SELECT["随机抽取最多 6 个 Gateway"]
+    C["Controller 中控：校验 sk_cf_*"]
+    CK["读取 KV Providers，随机选择最多 2 个 Gateway"]
 
-    U --> AUTH --> CK --> SELECT
+    U --> C --> CK
 
-    subgraph CR["Controller：6 个 Gateway 横向竞速"]
-        direction TB
+    subgraph PA["Gateway A：独立 NVIDIA Key 池"]
+        GA["使用 Gateway A 的 sk_cf_*"]
+        KA["随机抽取最多 6 个 NVIDIA Key"]
+        RA["6 个候选并发竞速，每 Key 最多 2 次"]
+        VA["检查 HTTP 状态和首个有效 SSE 事件"]
+        FA["Gateway A 失败"]
 
-        subgraph CR1["第一组"]
-            direction LR
-            G1["Gateway 1"]
-            G2["Gateway 2"]
-            G3["Gateway 3"]
-        end
-
-        subgraph CR2["第二组"]
-            direction LR
-            G4["Gateway 4"]
-            G5["Gateway 5"]
-            G6["Gateway 6"]
-        end
+        GA --> KA --> RA --> VA
+        VA -->|"429、超时、5xx、ResourceExhausted"| RTA["当前候选重试"]
+        RTA -->|"未达到 2 次"| RA
+        RTA -->|"所有候选耗尽"| FA
     end
 
-    SELECT --> G1
-    SELECT --> G2
-    SELECT --> G3
-    SELECT --> G4
-    SELECT --> G5
-    SELECT --> G6
+    subgraph PB["Gateway B：独立 NVIDIA Key 池"]
+        GB["使用 Gateway B 的 sk_cf_*"]
+        KB["随机抽取最多 6 个 NVIDIA Key"]
+        RB["6 个候选并发竞速，每 Key 最多 2 次"]
+        VB["检查 HTTP 状态和首个有效 SSE 事件"]
+        FB["Gateway B 失败"]
 
-    G1 --> FILTER
-    G2 --> FILTER
-    G3 --> FILTER
-    G4 --> FILTER
-    G5 --> FILTER
-    G6 --> FILTER
-
-    FILTER["Controller 分别检查每路 Gateway 响应"]
-
-    FILTER -->|"2xx 且 SSE 内容有效"| CWIN["最先有效成功的 Gateway 胜出"]
-    FILTER -->|"429、超时、5xx、ResourceExhausted"| CRETRY["当前 Gateway 候选纵向重试"]
-    FILTER -->|"硬错误或重试耗尽"| CDROP["过滤该 Gateway，继续等待其他候选"]
-
-    CRETRY --> FILTER
-    CWIN --> OUT["将胜出响应流返回客户端"]
-    CWIN -.-> CABORT["取消其他 Gateway 请求"]
-
-    subgraph GI["任意单个 Gateway 的内部竞速"]
-        GK["读取该 Gateway 的 KV Providers"]
-        KS["随机抽取最多 6 个 NVIDIA Key"]
-        KR["6 个 NVIDIA Key 横向并发竞速"]
-        NV["NVIDIA API 共享推理 Worker 池"]
-        VF["检查 HTTP 状态和首个有效 SSE 事件"]
-
-        GK --> KS --> KR --> NV --> VF
-
-        VF -->|"2xx 且 choices / delta 正常"| KWIN["该 Gateway 获得有效成功响应"]
-        VF -->|"429、超时、5xx、ResourceExhausted"| KRETRY["当前 Key 纵向重试，最多 2 次"]
-        VF -->|"400、401、403、404"| KDROP["过滤当前 Key"]
-
-        KRETRY -->|"仍有尝试次数"| NV
-        KRETRY -->|"重试耗尽"| KDROP
-        KDROP --> KWAIT["继续等待其他 NVIDIA Key"]
-        KWIN -.-> KABORT["取消其他 NVIDIA Key 请求"]
+        GB --> KB --> RB --> VB
+        VB -->|"429、超时、5xx、ResourceExhausted"| RTB["当前候选重试"]
+        RTB -->|"未达到 2 次"| RB
+        RTB -->|"所有候选耗尽"| FB
     end
 
-    G1 -.->|"每个 Gateway 内部均执行此逻辑"| GK
-    KWIN -.->|"Gateway 响应交回 Controller"| FILTER
-    CABORT -.->|"取消继续向下传递"| KABORT
+    CK --> GA
+    CK --> GB
+
+    RA --> NA["NVIDIA API：共享推理 Worker 池"]
+    RB --> NA
+    NA --> VA
+    NA --> VB
+
+    VA -->|"2xx 且 SSE 内容正常"| WA["Gateway A 有效成功"]
+    VB -->|"2xx 且 SSE 内容正常"| WB["Gateway B 有效成功"]
+
+    WA --> FIRST["Controller 选择最先有效成功的 Gateway"]
+    WB --> FIRST
+
+    FIRST --> STREAM["将响应流返回客户端"]
+    FIRST -.-> ABORT["取消落败 Gateway，并向下取消 NVIDIA 请求"]
 ```
 
 ## 竞速参数
