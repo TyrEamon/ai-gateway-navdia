@@ -6,7 +6,7 @@ keep_vars = true
 
 [[kv_namespaces]]
 binding = "KV"
-id = "2db5507b364842029da858bd04dc82c8"
+id = "f7773f8e7beb436e8c726f167ced95b1"
 
 [env.gateway1]
 name = "gateway-1"
