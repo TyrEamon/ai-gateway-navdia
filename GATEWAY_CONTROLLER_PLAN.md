@@ -24,6 +24,13 @@ Client
 
 Each deployment keeps its own KV namespace. Do not share KV between controller and downstream gateways.
 
+The default `wrangler.toml` does not declare a KV namespace. Bind one manually in the Cloudflare dashboard for each deployment:
+
+- Binding name: `KV`
+- Namespace: the KV namespace dedicated to that deployment
+
+If the binding name is not exactly `KV`, the Worker will not be able to read its configuration.
+
 ## Provider Mapping
 
 For a downstream NVIDIA gateway:
