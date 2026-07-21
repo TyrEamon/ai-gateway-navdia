@@ -60,54 +60,33 @@ API Key：gateway-1 后台生成的 sk_cf_*
 
 ```mermaid
 flowchart TD
-    U["客户端请求 /v1/chat/completions"]
-    C["Controller 中控：校验 sk_cf_*"]
-    CK["读取 KV Providers，随机选择最多 2 个 Gateway"]
+    U["客户端请求"] --> CA["Controller 校验 sk_cf_*"]
+    CA --> CP["读取 KV 并打平 Provider + Key"]
+    CP --> CR["横向随机抽取最多 6 个 Gateway 候选"]
 
-    U --> C --> CK
+    CR --> GW["6 个 Gateway 同时竞速"]
+    GW --> CF{"Controller 检查响应"}
 
-    subgraph PA["Gateway A：独立 NVIDIA Key 池"]
-        GA["使用 Gateway A 的 sk_cf_*"]
-        KA["随机抽取最多 6 个 NVIDIA Key"]
-        RA["6 个候选并发竞速，每 Key 最多 2 次"]
-        VA["检查 HTTP 状态和首个有效 SSE 事件"]
-        FA["Gateway A 失败"]
+    CF -->|"有效 2xx + 正常 SSE"| CW["首个 Gateway 胜出"]
+    CF -->|"临时失败"| CV["纵向重试同一 Gateway 候选"]
+    CV -->|"仍有次数"| GW
+    CV -->|"耗尽或硬错误"| CD["过滤该 Gateway，等待其他候选"]
 
-        GA --> KA --> RA --> VA
-        VA -->|"429、超时、5xx、ResourceExhausted"| RTA["当前候选重试"]
-        RTA -->|"未达到 2 次"| RA
-        RTA -->|"所有候选耗尽"| FA
-    end
+    GW --> GR["每个 Gateway 独立执行竞速引擎"]
+    GR --> KP["读取自己的 NVIDIA Key 池"]
+    KP --> KR["横向随机抽取最多 6 个 Key"]
+    KR --> NV["同时请求 NVIDIA API"]
+    NV --> KF{"Gateway 检查响应"}
 
-    subgraph PB["Gateway B：独立 NVIDIA Key 池"]
-        GB["使用 Gateway B 的 sk_cf_*"]
-        KB["随机抽取最多 6 个 NVIDIA Key"]
-        RB["6 个候选并发竞速，每 Key 最多 2 次"]
-        VB["检查 HTTP 状态和首个有效 SSE 事件"]
-        FB["Gateway B 失败"]
+    KF -->|"有效 2xx + 正常 SSE"| KW["首个 NVIDIA Key 胜出"]
+    KF -->|"临时失败"| KV["纵向重试同一 NVIDIA Key"]
+    KV -->|"仍有次数"| NV
+    KV -->|"耗尽或硬错误"| KD["过滤该 Key，等待其他 Key"]
 
-        GB --> KB --> RB --> VB
-        VB -->|"429、超时、5xx、ResourceExhausted"| RTB["当前候选重试"]
-        RTB -->|"未达到 2 次"| RB
-        RTB -->|"所有候选耗尽"| FB
-    end
-
-    CK --> GA
-    CK --> GB
-
-    RA --> NA["NVIDIA API：共享推理 Worker 池"]
-    RB --> NA
-    NA --> VA
-    NA --> VB
-
-    VA -->|"2xx 且 SSE 内容正常"| WA["Gateway A 有效成功"]
-    VB -->|"2xx 且 SSE 内容正常"| WB["Gateway B 有效成功"]
-
-    WA --> FIRST["Controller 选择最先有效成功的 Gateway"]
-    WB --> FIRST
-
-    FIRST --> STREAM["将响应流返回客户端"]
-    FIRST -.-> ABORT["取消落败 Gateway，并向下取消 NVIDIA 请求"]
+    KW --> CF
+    CW --> OUT["响应流返回客户端"]
+    CW -.-> AB["取消其他 Gateway"]
+    KW -.-> AK["取消其他 NVIDIA Key"]
 ```
 
 ## 竞速参数
