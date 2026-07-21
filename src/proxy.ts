@@ -23,7 +23,7 @@ interface RacingKey {
 }
 
 type KeyWorkerResult =
-  | { type: 'success'; response: Response; keyIndex: number; attempt: number }
+  | { type: 'success'; response: Response; keyIndex: number; attempt: number; responsePreview?: string }
   | { type: 'failed'; status: number; detail: string; hard: boolean; keyIndex: number }
   | { type: 'aborted'; keyIndex: number }
 
@@ -238,44 +238,109 @@ async function createRaceWinnerLog(params: {
   }
 }
 
-async function readStreamPreview(stream: ReadableStream, maxBytes = 1000): Promise<string> {
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-
-  try {
-    while (total < maxBytes) {
-      const { value, done } = await reader.read()
-      if (done || !value) break
-      const remaining = maxBytes - total
-      const chunk = value.length > remaining ? value.slice(0, remaining) : value
-      chunks.push(chunk)
-      total += chunk.length
-      if (value.length > remaining) break
-    }
-  } finally {
-    await reader.cancel().catch(() => {})
-  }
-
+function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
   const data = new Uint8Array(total)
   let offset = 0
   for (const chunk of chunks) {
     data.set(chunk, offset)
     offset += chunk.length
   }
-
-  return new TextDecoder().decode(data)
+  return data
 }
 
-function teeResponseForPreview(response: Response): { response: Response; preview: Promise<string> } {
-  if (!response.body) return { response, preview: Promise.resolve('') }
+function looksLikeUpstreamErrorPayload(preview: string): boolean {
+  const lower = preview.toLowerCase()
+  if (looksTransientUpstreamError(preview)) return true
+  return lower.includes('"error"') && (
+    lower.includes('"type"') ||
+    lower.includes('"code"') ||
+    lower.includes('internal_server_error') ||
+    lower.includes('data:')
+  )
+}
 
-  const [clientBody, previewBody] = response.body.tee()
-  const forwarded = new Response(clientBody, response)
-  return {
-    response: forwarded,
-    preview: readStreamPreview(previewBody).catch((err) => `preview failed: ${errorMessage(err)}`),
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+  timeoutMs: number
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (signal.aborted) throw new Error('The operation was aborted')
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  let abortHandler: (() => void) | undefined
+  const abortPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Response preview timed out')), timeoutMs)
+    abortHandler = () => reject(new Error('The operation was aborted'))
+    signal.addEventListener('abort', abortHandler, { once: true })
+  })
+
+  try {
+    return await Promise.race([reader.read(), abortPromise])
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+    if (abortHandler) signal.removeEventListener('abort', abortHandler)
   }
+}
+
+async function inspectOkResponse(
+  response: Response,
+  signal: AbortSignal,
+  maxBytes = 1000,
+  previewTimeoutMs = 5000
+): Promise<
+  | { ok: true; response: Response; preview: string }
+  | { ok: false; status: number; detail: string }
+> {
+  if (!response.body) return { ok: true, response, preview: '' }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  try {
+    while (total < maxBytes) {
+      const { value, done } = await readWithTimeout(reader, signal, previewTimeoutMs)
+      if (done || !value) break
+      chunks.push(value)
+      total += value.length
+      if (total > 0 && new TextDecoder().decode(concatChunks(chunks, total)).includes('\n\n')) break
+    }
+  } catch (err) {
+    await reader.cancel().catch(() => {})
+    return { ok: false, status: 502, detail: errorMessage(err) }
+  }
+
+  const previewBytes = concatChunks(chunks, total)
+  const preview = new TextDecoder().decode(previewBytes.slice(0, maxBytes))
+  if (looksLikeUpstreamErrorPayload(preview)) {
+    await reader.cancel().catch(() => {})
+    return { ok: false, status: 502, detail: preview.substring(0, 500) }
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (previewBytes.length > 0) controller.enqueue(previewBytes)
+
+      const pump = (): void => {
+        reader.read()
+          .then(({ value, done }) => {
+            if (done) {
+              controller.close()
+              return
+            }
+            if (value) controller.enqueue(value)
+            pump()
+          })
+          .catch((err) => controller.error(err))
+      }
+      pump()
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+
+  return { ok: true, response: new Response(stream, response), preview }
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, parentSignal: AbortSignal, timeoutMs: number): Promise<Response> {
@@ -325,7 +390,13 @@ async function runKeyWorker(params: {
       }, params.signal, params.config.attemptTimeoutMs)
 
       if (response.ok) {
-        return { type: 'success', response, keyIndex: params.keyIndex, attempt }
+        const inspected = await inspectOkResponse(response, params.signal, 1000, params.config.attemptTimeoutMs)
+        if (inspected.ok) {
+          return { type: 'success', response: inspected.response, keyIndex: params.keyIndex, attempt, responsePreview: inspected.preview }
+        }
+        lastStatus = inspected.status
+        lastDetail = inspected.detail
+        continue
       }
 
       lastStatus = response.status
@@ -452,14 +523,12 @@ async function raceUpstreamKeys(params: {
         const winnerKey = winner?.key.key || ''
         const winnerProvider = winner?.provider || params.fallbackProvider
         const latencyMs = Date.now() - startedAt
-        let response = buildProxyResponse(successResult.response)
-        const responsePreview = shouldWriteRaceLogs ? teeResponseForPreview(response) : null
-        if (responsePreview) response = responsePreview.response
+        const response = buildProxyResponse(successResult.response)
         const statusCode = response.status
         if (shouldWriteRaceLogs) {
           const logPromise = Promise.all([
             createRaceParticipants(selectedKeys),
-            responsePreview?.preview || Promise.resolve(''),
+            Promise.resolve(successResult.responsePreview || ''),
           ])
             .then(([participants, preview]) => createRaceWinnerLog({
               outcome: 'success',
