@@ -57,6 +57,13 @@ name = "nvidia-controller"
 binding = "KV"
 id = "530115f434564a10aef4220df254bfc9"
 
+[env.tzy-navdia-control]
+name = "tzy-navdia-control"
+
+[[env.controller.kv_namespaces]]
+binding = "KV"
+id = "2db5507b364842029da858bd04dc82c8"
+
 # Admin credentials (set these in Cloudflare Dashboard > Workers > Variables)
 # [vars]
 # ADMIN_USERNAME = "admin"
