@@ -4,6 +4,59 @@ compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
 keep_vars = true
 
+[[kv_namespaces]]
+binding = "KV"
+id = "2db5507b364842029da858bd04dc82c8"
+
+[env.gateway1]
+name = "gateway-1"
+
+[[env.gateway1.kv_namespaces]]
+binding = "KV"
+id = "cc06020546a1473e9b07f118584ccae2"
+
+[env.gateway2]
+name = "gateway-2"
+
+[[env.gateway2.kv_namespaces]]
+binding = "KV"
+id = "e3e4dea13aaa4c1eba20542d9936af59"
+
+[env.gateway3]
+name = "gateway-3"
+
+[[env.gateway3.kv_namespaces]]
+binding = "KV"
+id = "894e81604b6a4cccb7edd95f9a3eaaf7"
+
+[env.gateway4]
+name = "gateway-4"
+
+[[env.gateway4.kv_namespaces]]
+binding = "KV"
+id = "1c814edce9c344a88ab04886f0ac49b3"
+
+[env.gateway5]
+name = "gateway-5"
+
+[[env.gateway5.kv_namespaces]]
+binding = "KV"
+id = "207588d76c93483bb8c726b4df195811"
+
+[env.gateway6]
+name = "gateway-6"
+
+[[env.gateway6.kv_namespaces]]
+binding = "KV"
+id = "473dbeceecba4e42bddefafb9ff23fc4"
+
+[env.controller]
+name = "nvidia-controller"
+
+[[env.controller.kv_namespaces]]
+binding = "KV"
+id = "530115f434564a10aef4220df254bfc9"
+
 # Admin credentials (set these in Cloudflare Dashboard > Workers > Variables)
 # [vars]
 # ADMIN_USERNAME = "admin"

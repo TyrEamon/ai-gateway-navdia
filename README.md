@@ -90,19 +90,35 @@ UPSTREAM_RACE_OVERALL_TIMEOUT_MS=20000
 | --- | --- |
 | Root directory | 留空，或填 `/` |
 | Build command | 留空 |
-| Deploy command | `npx wrangler deploy` |
+| Deploy command | 见下面的多部署命令表 |
 
-如果界面要求 Build command 不能空，也可以填：
+如果界面要求 Build command 不能空，也可以填对应 env 的 dry-run，例如 gateway-1：
 
 ```bash
-npm run build
+npx wrangler deploy --dry-run --env gateway1 --keep-vars
 ```
 
-本仓库的 `build` 是 `wrangler deploy --dry-run`，只做打包检查；真正部署靠 `npx wrangler deploy`。
+本仓库的 `build` 是默认环境的 `wrangler deploy --dry-run`，只做打包检查。多 gateway / controller 部署时，建议直接在 Cloudflare 项目里分别填写完整的 `npx wrangler deploy --env ...`。
+
+### 多部署命令
+
+如果 6 个 gateway 和 1 个中控都连接同一个 GitHub 仓库，每个 Cloudflare Worker 项目的 Deploy command 必须不一样：
+
+| Worker 项目 | Deploy command |
+| --- | --- |
+| `gateway-1` | `npx wrangler deploy --env gateway1 --keep-vars` |
+| `gateway-2` | `npx wrangler deploy --env gateway2 --keep-vars` |
+| `gateway-3` | `npx wrangler deploy --env gateway3 --keep-vars` |
+| `gateway-4` | `npx wrangler deploy --env gateway4 --keep-vars` |
+| `gateway-5` | `npx wrangler deploy --env gateway5 --keep-vars` |
+| `gateway-6` | `npx wrangler deploy --env gateway6 --keep-vars` |
+| `nvidia-controller` | `npx wrangler deploy --env controller --keep-vars` |
+
+不要 7 个项目都写 `npx wrangler deploy`。否则它们会读默认配置，容易出现 Worker 名和 KV 绑定互相覆盖的问题。`--keep-vars` 用来保留 Dashboard 里设置的 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 等变量。
 
 ## KV 绑定
 
-`wrangler.toml` 默认不声明 KV，方便同一仓库部署多个 gateway/controller。每个 Cloudflare 部署都要在 Dashboard 手动绑定自己的 KV namespace。
+`wrangler.toml` 已经声明 6 个 gateway 和 1 个 controller 的 KV 绑定。以后 Git 自动部署时，KV 会跟着配置一起发布，不需要再靠 Dashboard 手动绑定。
 
 绑定名必须是：
 
@@ -113,12 +129,18 @@ KV
 示例：
 
 ```text
-gateway-1       -> KV namespace: gateway-1
-gateway-2       -> KV namespace: gateway-2
-nvidia-control  -> KV namespace: nvidia-control
+gateway-1          -> KV namespace: gateway-1
+gateway-2          -> KV namespace: gateway-2
+gateway-3          -> KV namespace: gateway-3
+gateway-4          -> KV namespace: gateway-4
+gateway-5          -> KV namespace: gateway-5
+gateway-6          -> KV namespace: gateway-6
+nvidia-controller  -> KV namespace: nvidia-controller
 ```
 
 不要让多个部署共用同一个 KV，否则后台配置、日志和 proxy key 会混在一起。
+
+如果你在 Cloudflare Dashboard 手动改了 KV 绑定，下一次 Git 部署仍会以 `wrangler.toml` 为准。也就是说：稳定配置应该写在仓库里，Dashboard 手动绑定只适合临时排查。
 
 ## 环境变量
 
