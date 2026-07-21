@@ -102,10 +102,11 @@ npx wrangler deploy --dry-run --env gateway1 --keep-vars
 
 ### 多部署命令
 
-如果 6 个 gateway 和 1 个中控都连接同一个 GitHub 仓库，每个 Cloudflare Worker 项目的 Deploy command 必须不一样：
+如果多个 Worker 都连接同一个 GitHub 仓库，每个 Cloudflare Worker 项目的 Deploy command 必须不一样：
 
 | Worker 项目 | Deploy command |
 | --- | --- |
+| `ai-gateway-navdia` | `npx wrangler deploy --env aigateway --keep-vars` |
 | `gateway-1` | `npx wrangler deploy --env gateway1 --keep-vars` |
 | `gateway-2` | `npx wrangler deploy --env gateway2 --keep-vars` |
 | `gateway-3` | `npx wrangler deploy --env gateway3 --keep-vars` |
@@ -113,12 +114,13 @@ npx wrangler deploy --dry-run --env gateway1 --keep-vars
 | `gateway-5` | `npx wrangler deploy --env gateway5 --keep-vars` |
 | `gateway-6` | `npx wrangler deploy --env gateway6 --keep-vars` |
 | `nvidia-controller` | `npx wrangler deploy --env controller --keep-vars` |
+| `tzy-navdia-control` | `npx wrangler deploy --env tzy-navdia-control --keep-vars` |
 
-不要 7 个项目都写 `npx wrangler deploy`。否则它们会读默认配置，容易出现 Worker 名和 KV 绑定互相覆盖的问题。`--keep-vars` 用来保留 Dashboard 里设置的 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 等变量。
+不要多个项目都写 `npx wrangler deploy`。否则它们会读默认配置，容易出现 Worker 名和 KV 绑定互相覆盖的问题。`--keep-vars` 用来保留 Dashboard 里设置的 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 等变量。
 
 ## KV 绑定
 
-`wrangler.toml` 已经声明 6 个 gateway 和 1 个 controller 的 KV 绑定。以后 Git 自动部署时，KV 会跟着配置一起发布，不需要再靠 Dashboard 手动绑定。
+`wrangler.toml` 已经声明 `ai-gateway-navdia`、6 个 gateway 和多个 controller 的 KV 绑定。以后 Git 自动部署时，KV 会跟着配置一起发布，不需要再靠 Dashboard 手动绑定。
 
 绑定名必须是：
 
@@ -129,6 +131,7 @@ KV
 示例：
 
 ```text
+ai-gateway-navdia  -> KV namespace: ai-gateway-navdia-kv
 gateway-1          -> KV namespace: gateway-1
 gateway-2          -> KV namespace: gateway-2
 gateway-3          -> KV namespace: gateway-3
@@ -136,6 +139,7 @@ gateway-4          -> KV namespace: gateway-4
 gateway-5          -> KV namespace: gateway-5
 gateway-6          -> KV namespace: gateway-6
 nvidia-controller  -> KV namespace: nvidia-controller
+tzy-navdia-control -> KV namespace: pengyou-navdia-kv
 ```
 
 不要让多个部署共用同一个 KV，否则后台配置、日志和 proxy key 会混在一起。

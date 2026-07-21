@@ -4,7 +4,10 @@ compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
 keep_vars = true
 
-[[kv_namespaces]]
+[env.aigateway]
+name = "ai-gateway-navdia"
+
+[[env.aigateway.kv_namespaces]]
 binding = "KV"
 id = "f7773f8e7beb436e8c726f167ced95b1"
 
@@ -57,10 +60,10 @@ name = "nvidia-controller"
 binding = "KV"
 id = "530115f434564a10aef4220df254bfc9"
 
-[env.tzy-navdia-control]
+[env."tzy-navdia-control"]
 name = "tzy-navdia-control"
 
-[[env.controller.kv_namespaces]]
+[[env."tzy-navdia-control".kv_namespaces]]
 binding = "KV"
 id = "2db5507b364842029da858bd04dc82c8"
 
