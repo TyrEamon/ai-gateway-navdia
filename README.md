@@ -56,6 +56,60 @@ API Key：gateway-1 后台生成的 sk_cf_*
 - Debug 日志：默认关闭；打开后记录最近 20 条竞速成功/失败日志和响应开头 preview。
 - 数据导入导出：后台可导出/导入 provider 和 proxy key 配置。
 
+## 原理图
+
+```mermaid
+flowchart TD
+    U["客户端请求 /v1/chat/completions"]
+    C["Controller 中控：校验 sk_cf_*"]
+    CK["读取 KV Providers，随机选择最多 2 个 Gateway"]
+
+    U --> C --> CK
+
+    subgraph PA["Gateway A：独立 NVIDIA Key 池"]
+        GA["使用 Gateway A 的 sk_cf_*"]
+        KA["随机抽取最多 6 个 NVIDIA Key"]
+        RA["6 个候选并发竞速，每 Key 最多 2 次"]
+        VA["检查 HTTP 状态和首个有效 SSE 事件"]
+        FA["Gateway A 失败"]
+
+        GA --> KA --> RA --> VA
+        VA -->|"429、超时、5xx、ResourceExhausted"| RTA["当前候选重试"]
+        RTA -->|"未达到 2 次"| RA
+        RTA -->|"所有候选耗尽"| FA
+    end
+
+    subgraph PB["Gateway B：独立 NVIDIA Key 池"]
+        GB["使用 Gateway B 的 sk_cf_*"]
+        KB["随机抽取最多 6 个 NVIDIA Key"]
+        RB["6 个候选并发竞速，每 Key 最多 2 次"]
+        VB["检查 HTTP 状态和首个有效 SSE 事件"]
+        FB["Gateway B 失败"]
+
+        GB --> KB --> RB --> VB
+        VB -->|"429、超时、5xx、ResourceExhausted"| RTB["当前候选重试"]
+        RTB -->|"未达到 2 次"| RB
+        RTB -->|"所有候选耗尽"| FB
+    end
+
+    CK --> GA
+    CK --> GB
+
+    RA --> NA["NVIDIA API：共享推理 Worker 池"]
+    RB --> NA
+    NA --> VA
+    NA --> VB
+
+    VA -->|"2xx 且 SSE 内容正常"| WA["Gateway A 有效成功"]
+    VB -->|"2xx 且 SSE 内容正常"| WB["Gateway B 有效成功"]
+
+    WA --> FIRST["Controller 选择最先有效成功的 Gateway"]
+    WB --> FIRST
+
+    FIRST --> STREAM["将响应流返回客户端"]
+    FIRST -.-> ABORT["取消落败 Gateway，并向下取消 NVIDIA 请求"]
+```
+
 ## 竞速参数
 
 推荐使用新的 `UPSTREAM_RACE_*` 变量。旧的 `NVIDIA_RACE_*` 仍兼容。
