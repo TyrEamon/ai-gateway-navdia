@@ -4,6 +4,7 @@ import { logger } from 'hono/logger'
 import type { Env } from './types'
 import { adminAuthMiddleware, proxyKeyAuthMiddleware, handleLogin, handleLogout } from './auth'
 import { handleProxy, handleModels } from './proxy'
+import { handleReadImage } from './read-image'
 import {
   handleStatus,
   handleGetSettings,
@@ -80,6 +81,7 @@ app.patch('/admin/api/proxy-keys/:id', handleUpdateProxyKey)
 app.use('/v1/*', proxyKeyAuthMiddleware)
 
 app.get('/v1/models', handleModels)
+app.post('/v1/read-image', handleReadImage)
 app.all('/v1/*', handleProxy)
 
 app.notFound((c) => {
