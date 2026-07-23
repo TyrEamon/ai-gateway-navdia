@@ -259,6 +259,15 @@ function looksLikeUpstreamErrorPayload(preview: string): boolean {
   )
 }
 
+function looksLikeDoneOnlyPayload(preview: string): boolean {
+  const lines = preview
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return lines.length > 0 && lines.every((line) => line === 'data: [DONE]' || line === '[DONE]')
+}
+
 async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   signal: AbortSignal,
@@ -291,7 +300,7 @@ async function inspectOkResponse(
   | { ok: true; response: Response; preview: string }
   | { ok: false; status: number; detail: string }
 > {
-  if (!response.body) return { ok: true, response, preview: '' }
+  if (!response.body) return { ok: false, status: 502, detail: 'HTTP 200 with empty response body' }
 
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
@@ -312,6 +321,14 @@ async function inspectOkResponse(
 
   const previewBytes = concatChunks(chunks, total)
   const preview = new TextDecoder().decode(previewBytes.slice(0, maxBytes))
+  if (total === 0 || preview.trim().length === 0) {
+    await reader.cancel().catch(() => {})
+    return { ok: false, status: 502, detail: 'HTTP 200 with empty response body' }
+  }
+  if (looksLikeDoneOnlyPayload(preview)) {
+    await reader.cancel().catch(() => {})
+    return { ok: false, status: 502, detail: 'HTTP 200 with only data: [DONE]' }
+  }
   if (looksLikeUpstreamErrorPayload(preview)) {
     await reader.cancel().catch(() => {})
     return { ok: false, status: 502, detail: preview.substring(0, 500) }
